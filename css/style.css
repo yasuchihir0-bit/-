@@ -194,3 +194,6 @@ h2 { font-size: 20px; margin: 20px 0 10px; }
 .grid.cats { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .grid.cats .tile { padding: 12px 14px; }
 .grid.cats .tile .tt { font-size: 17px; }
+.lv { color: #d29a00; letter-spacing: 1px; font-size: 13px; }
+.seg { flex-wrap: wrap; }
+.seg button { flex: 1 1 auto; }

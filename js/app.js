@@ -18,12 +18,13 @@
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* noop */ } };
 
   const statKey = (q) => `${q.subject}:${q.cat}`;
+  const qkey = (q) => `${q.subject}|${q.q}|${q.ans}`;
   const record = (q, ok) => {
     const k = statKey(q);
     const s = store.stats[k] || (store.stats[k] = { n: 0, ok: 0 });
     s.n++; if (ok) s.ok++;
-    const sig = q.subject + '|' + q.q;
-    store.wrong = store.wrong.filter((w) => w.subject + '|' + w.q !== sig);
+    const sig = qkey(q);
+    store.wrong = store.wrong.filter((w) => qkey(w) !== sig);
     if (!ok) {
       store.wrong.unshift(q);
       if (store.wrong.length > 150) store.wrong.length = 150;
@@ -34,27 +35,44 @@
   /* ───────── 問題をつくる ───────── */
   const catOf = (sid, cid) => SUBJ[sid].cats.find((c) => c.id === cid);
 
+  const lvOf = (x) => x.lv || 1;
+
   function fromBank(subject, item, idx) {
-    return {
-      subject: subject.id, cat: item.cat, id: `${subject.id}-${idx}`,
-      type: 'choice', q: item.q, choices: shuffle(item.c), ans: item.c[0], exp: item.exp,
-    };
+    const base = { subject: subject.id, cat: item.cat, id: `${subject.id}-${idx}`, q: item.q, exp: item.exp, lv: lvOf(item) };
+    if (item.a) return Object.assign(base, { type: 'text', ans: item.a[0], accept: item.a });
+    return Object.assign(base, { type: 'choice', choices: shuffle(item.c), ans: item.c[0] });
   }
 
-  function fromGen(subject, cat) {
-    const g = pick(cat.gens)();
+  function fromGen(subject, cat, filter) {
+    const g = pick(cat.gens)(filter);
+    if (!g) return null;
     return Object.assign({ subject: subject.id, cat: cat.id, type: g.choices ? 'choice' : 'input' }, g);
   }
 
+  /* 記述式の答え合わせ：空白・記号・カタカナ/ひらがなのちがいは無視 */
+  const normText = (s) => String(s).normalize('NFKC')
+    .replace(/[\s　。、「」『』（）()・]/g, '')
+    .replace(/[\u30a1-\u30f6]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  const textOk = (q, v) => q.accept.some((a) => normText(a) === normText(v));
+
+  /* 難易度のしぼりこみ */
+  const LEVELS = {
+    all: { name: 'すべて', f: null },
+    basic: { name: '★〜★★', f: (lv) => lv <= 2 },
+    hard: { name: '★★〜★★★', f: (lv) => lv >= 2 },
+    top: { name: '★★★のみ', f: (lv) => lv >= 3 },
+  };
+  const stars = (lv) => '★'.repeat(lv) + '☆'.repeat(3 - lv);
+
   /* targets: [{sid, cid}] の中から n 問。知識問題は重ならないように選ぶ */
-  function buildSet(targets, n) {
+  function buildSet(targets, n, filter) {
     const pools = targets.map(({ sid, cid }) => {
       const subject = SUBJ[sid], cat = catOf(sid, cid);
       const bank = (subject.bank || [])
         .map((item, idx) => ({ item, idx }))
-        .filter((x) => x.item.cat === cid);
+        .filter((x) => x.item.cat === cid && (!filter || filter(lvOf(x.item))));
       return { subject, cat, bank: shuffle(bank) };
-    });
+    }).filter((p) => p.cat);
     const out = [], seen = new Set();
     let guard = 0;
     while (out.length < n && guard++ < n * 50) {
@@ -62,10 +80,10 @@
       if (!live.length) break;
       const p = pick(live);
       let q;
-      if (p.cat.gens && (!p.bank.length || Math.random() < 0.5)) q = fromGen(p.subject, p.cat);
-      else { const { item, idx } = p.bank.pop(); q = fromBank(p.subject, item, idx); }
-      if (seen.has(q.q)) continue;
-      seen.add(q.q);
+      if (p.cat.gens && (!p.bank.length || Math.random() < 0.3)) q = fromGen(p.subject, p.cat, filter);
+      else if (p.bank.length) { const { item, idx } = p.bank.pop(); q = fromBank(p.subject, item, idx); }
+      if (!q || seen.has(qkey(q))) continue;
+      seen.add(qkey(q));
       out.push(q);
     }
     return out;
@@ -84,7 +102,7 @@
   });
 
   const pct = (ok, n) => (n ? Math.round((ok / n) * 100) : 0);
-  const ansText = (q) => (q.type === 'choice' ? esc(q.ans) : rich(fmt(q.ans, { fraction: q.fracAns })) + (q.unit ? ' ' + esc(q.unit) : ''));
+  const ansText = (q) => (q.type === 'choice' || q.type === 'text' ? esc(q.ans) : rich(fmt(q.ans, { fraction: q.fracAns })) + (q.unit ? ' ' + esc(q.unit) : ''));
   const subjTotals = (sid) => Object.entries(store.stats)
     .filter(([k]) => k.startsWith(sid + ':'))
     .reduce((a, [, v]) => ({ n: a.n + v.n, ok: a.ok + v.ok }), { n: 0, ok: 0 });
@@ -106,9 +124,13 @@
       <h1>きょうも 1 歩ずつ。</h1>
       <p class="lead">東海中学の入試に向けて、国語の「ことばの知識」と「文法」を練習しましょう（漢字の読み書きと文章読解は入っていません）。${t.n ? `これまで ${t.n} 問・正答率 ${pct(t.ok, t.n)}%。` : ''}</p>
       <div class="grid">
+        <button class="tile" style="--tc:var(--c-koku)" data-top="1">
+          <span class="ic">🏯</span><span class="tt">東海レベル実戦</span>
+          <span class="ds">★★〜★★★の問題だけで 15 問。記述式もあり。</span>
+        </button>
         <button class="tile" style="--tc:var(--c-mix)" data-mix="1">
           <span class="ic">📝</span><span class="tt">ミニテスト</span>
-          <span class="ds">全分野から 15 問。時間を計って力だめし。</span>
+          <span class="ds">全分野から 15 問（★〜★★★）。時間を計って力だめし。</span>
         </button>
         <button class="tile" style="--tc:var(--ng)" data-review="1" ${wn ? '' : 'disabled'}>
           <span class="ic">🔁</span><span class="tt">まちがい復習</span>
@@ -124,12 +146,22 @@
         </button>
       </div>
       <h2>分野ごとに 10 問</h2>
+      <p class="small" style="margin-top:-6px">★基礎　★★標準　★★★発展（東海中レベル）</p>
       <div class="grid cats">${tiles}</div>`);
     onAll('[data-c]', 'click', (e) => {
       const cid = e.currentTarget.dataset.c;
       start(buildSet([{ sid: K.id, cid }], 10), catOf(K.id, cid).name);
     });
     on('[data-setup]', 'click', () => setup(K.id));
+    on('[data-top]', 'click', () => {
+      const targets = K.cats.map((c) => ({ sid: K.id, cid: c.id }));
+      // 実戦では、文章読解で使う「気持ち」「説明文の言葉」「使い方」「慣用句」「文法」を多めに出す
+      const focus = ['shinjo', 'hyoron', 'tsukai', 'kanyo', 'bunpo'].map((cid) => ({ sid: K.id, cid }));
+      const set = buildSet(focus, 9, LEVELS.hard.f);
+      const seenQ = new Set(set.map(qkey));
+      const rest = buildSet(targets, 12, LEVELS.hard.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 15 - set.length);
+      start(shuffle(set.concat(rest)), '東海レベル実戦');
+    });
     on('[data-mix]', 'click', () => {
       const targets = K.cats.map((c) => ({ sid: K.id, cid: c.id }));
       start(buildSet(targets, 15), 'ミニテスト');
@@ -146,7 +178,7 @@
   function setup(sid) {
     setKeys(null);
     const s = SUBJ[sid];
-    let count = 10;
+    let count = 10, level = 'all';
     h(`
       <h1>${s.icon} ${s.name}</h1>
       <p class="lead">練習したい分野を選んでください。</p>
@@ -158,10 +190,14 @@
         <div class="checks">
           ${s.cats.map((c) => {
             const st = store.stats[`${sid}:${c.id}`];
-            const size = c.gens ? '自動生成' : `${(s.bank || []).filter((b) => b.cat === c.id).length} 問`;
+            const size = c.gens ? '自動で出題' : `${(s.bank || []).filter((b) => b.cat === c.id).length} 問`;
             return `<label class="check"><input type="checkbox" value="${c.id}" checked>
               <span>${esc(c.name)}<br><span class="small">${size}${st ? `・正答率 ${pct(st.ok, st.n)}%` : ''}</span></span></label>`;
           }).join('')}
+        </div>
+        <div style="margin-top:16px"><strong>難易度</strong></div>
+        <div class="seg" role="group" aria-label="難易度" style="margin-top:6px">
+          ${Object.entries(LEVELS).map(([k, v]) => `<button type="button" data-lv="${k}" aria-pressed="${k === level}">${v.name}</button>`).join('')}
         </div>
         <div style="margin-top:16px"><strong>問題数</strong></div>
         <div class="seg" role="group" aria-label="問題数" style="margin-top:6px">
@@ -179,9 +215,13 @@
       count = +e.currentTarget.dataset.n;
       $app.querySelectorAll('[data-n]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.n === count)));
     });
+    onAll('[data-lv]', 'click', (e) => {
+      level = e.currentTarget.dataset.lv;
+      $app.querySelectorAll('[data-lv]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lv === level)));
+    });
     on('#go', 'click', () => {
       const targets = boxes().filter((b) => b.checked).map((b) => ({ sid, cid: b.value }));
-      const set = buildSet(targets, count);
+      const set = buildSet(targets, count, LEVELS[level].f);
       if (set.length) start(set, s.name);
     });
   }
@@ -205,7 +245,14 @@
     const q = session.questions[session.idx];
     const s = SUBJ[q.subject], cat = catOf(q.subject, q.cat);
     const total = session.questions.length;
-    const body = q.type === 'choice'
+    const body = q.type === 'text'
+      ? `<div class="answer-row">
+          <input id="ans" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="答え" placeholder="ここに書く">
+          <button class="btn" id="submitText" type="button">答える</button>
+        </div>
+        <div class="err" id="err"></div>
+        <div class="hint">記述式：ひらがなで書けば OK です。</div>`
+      : q.type === 'choice'
       ? `<div class="choices">${q.choices.map((c, i) => `<button class="choice" type="button" data-i="${i}"><span class="no">${i + 1}</span><span>${rich(c)}</span></button>`).join('')}</div>`
       : `<div class="answer-row">
           <input id="ans" type="text" inputmode="decimal" autocomplete="off" aria-label="答え" placeholder="答え">
@@ -218,7 +265,7 @@
         </div>
         <div class="hint">分数は「3/4」、帯分数は「1と3/4」のように入力します。小数でも OK。</div>`;
     h(`
-      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${s.name}</span> ${esc(cat ? cat.name : '')}</span>
+      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${esc(cat ? cat.name : s.name)}</span> <span class="lv" title="難易度">${stars(q.lv || 1)}</span>${q.type === 'text' ? ' <span class="small">記述</span>' : ''}</span>
         <span>${session.idx + 1} / ${total}　⏱ <span id="clock">${elapsed()}</span></span></div>
       <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
       <div class="card">
@@ -277,6 +324,23 @@
         const b = $app.querySelector(`.choice[data-i="${i}"]`);
         if (b) b.click();
       });
+    } else if (q.type === 'text') {
+      const input = $app.querySelector('#ans');
+      const err = $app.querySelector('#err');
+      const submit = () => {
+        if (answered) return;
+        const v = input.value.trim();
+        if (!v) { err.textContent = '答えを書いてください。'; return; }
+        err.textContent = '';
+        finish(textOk(q, v), v);
+      };
+      on('#submitText', 'click', submit);
+      setKeys((e) => {
+        if (e.key !== 'Enter' || e.isComposing) return;
+        e.preventDefault();
+        if (answered) next(); else submit();
+      });
+      if (window.matchMedia('(min-width: 700px)').matches) input.focus();
     } else {
       const input = $app.querySelector('#ans');
       const err = $app.querySelector('#err');
