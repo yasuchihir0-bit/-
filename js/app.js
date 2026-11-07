@@ -138,9 +138,9 @@
   /* 難易度のしぼりこみ */
   const LEVELS = {
     all: { name: 'すべて', f: null },
-    basic: { name: '★〜★★', f: (lv) => lv <= 2 },
-    hard: { name: '★★〜★★★', f: (lv) => lv >= 2 },
-    top: { name: '★★★のみ', f: (lv) => lv >= 3 },
+    basic: { name: 'やさしめ', f: (lv) => lv <= 2 },
+    hard: { name: 'むずかしめ', f: (lv) => lv >= 2 },
+    top: { name: '★★★だけ', f: (lv) => lv >= 3 },
   };
   const stars = (lv) => '★'.repeat(lv) + '☆'.repeat(3 - lv);
 
@@ -208,9 +208,11 @@
     const cat = catOf(K.id, cid);
     const r = { total: 0, new: 0, learn: 0, fixed: 0, master: 0 };
     if (cat.gens) {
-      const pairs = (K.ANTONYMS.length + K.SYNONYMS.length) * 2;
+      const pairs = K.ANTONYMS.length + K.SYNONYMS.length; // 1 組を 1 問として数える
       r.total = pairs;
       Object.values(store.cards).filter((c) => c.cat === cid).forEach((c) => { r[stageOf(c)]++; });
+      const seen = r.learn + r.fixed + r.master;
+      if (seen > pairs) { const k = pairs / seen; r.learn = Math.round(r.learn * k); r.fixed = Math.round(r.fixed * k); r.master = pairs - r.learn - r.fixed; }
       r.new = Math.max(0, pairs - r.learn - r.fixed - r.master);
       return r;
     }
@@ -232,93 +234,256 @@
   let onResize = null;
   let rz;
   window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => onResize && onResize(), 150); });
-  document.getElementById('homeBtn').addEventListener('click', () => {
-    if (session && !session.done && session.idx > 0 && !confirm('とちゅうでやめてホームにもどりますか？')) return;
-    home();
-  });
+  const leaveOk = () => !(session && !session.done && session.idx > 0 && !confirm('とちゅうでやめますか？（答えた問題の記録は残ります）'));
+  document.getElementById('homeBtn').addEventListener('click', () => { if (leaveOk()) home(); });
   Charts.initTips();
+  document.getElementById('statsBtn').addEventListener('click', () => { if (leaveOk()) analysis(); });
+  document.getElementById('helpBtn').addEventListener('click', () => { if (leaveOk()) help(); });
 
   const reset = () => { session = null; setKeys(null); onResize = null; clearInterval(timerId); };
 
-  /* 習熟度の横帯（習得・定着中・学習中・未学習） */
+  /* 覚えぐあいの 4 段階（色の濃さで表す） */
+  const STAGE_NAMES = { master: '覚えた', fixed: 'もう少し', learn: 'にがて', new: 'まだ' };
   function masteryBar(m, label, tips = true) {
     const seg = (n, cls, name) => (n ? `<i class="${cls}" style="flex:${n}"${tips ? ` data-tip="${esc(label)}：${name} ${n} 問（${pct(n, m.total)}%）"` : ''}></i>` : '');
-    return `<span class="mbar">${seg(m.master, 'm4', '習得')}${seg(m.fixed, 'm3', '定着中')}${seg(m.learn, 'm2', '学習中')}${seg(m.new, 'm0', '未学習')}</span>`;
+    return `<span class="mbar">${seg(m.master, 'm4', STAGE_NAMES.master)}${seg(m.fixed, 'm3', STAGE_NAMES.fixed)}${seg(m.learn, 'm2', STAGE_NAMES.learn)}${seg(m.new, 'm0', STAGE_NAMES.new)}</span>`;
+  }
+  const stageLegend = () => `<div class="legend"><i class="m4"></i>覚えた<i class="m3"></i>もう少し<i class="m2"></i>にがて<i class="m0"></i>まだ</div>`;
+
+  const allTargets = () => K.cats.map((c) => ({ sid: K.id, cid: c.id }));
+  const goal = () => store.goal || 20;
+  const todayCount = () => { const d = store.days[today()]; return d ? d.n + (d.cards || 0) : 0; };
+
+  /* 今日の学習：復習が来た問題を先に、残りを新しい問題で 10 問 */
+  const ROUND = 10;
+  function dailySet() {
+    const due = dueList().slice(0, ROUND);
+    const keys = new Set(due.map(qkey));
+    const fresh = buildSet(allTargets(), ROUND + 5).filter((q) => !keys.has(qkey(q))).slice(0, ROUND - due.length);
+    return { set: due.concat(fresh), nDue: due.length, nNew: fresh.length };
+  }
+  function startDaily() {
+    const { set } = dailySet();
+    start(set, '今日の学習');
+    if (session) session.daily = true;
   }
 
   /* ───────── ホーム ───────── */
   function home() {
     reset();
-    const t = totals();
-    const due = dueList();
-    const td = store.days[today()] || { n: 0, cards: 0 };
+    const due = dueList().length;
+    const done = todayCount(), G = goal();
     const st = streak();
+    const nDue = Math.min(due, ROUND);
+    const all = allTargets().map((t) => mastery(t.cid)).reduce((a, m) => ({ total: a.total + m.total, master: a.master + m.master, fixed: a.fixed + m.fixed, learn: a.learn + m.learn, new: a.new + m.new }), { total: 0, master: 0, fixed: 0, learn: 0, new: 0 });
+    const first = !Object.keys(store.days).length;
+    h(`
+      <div class="card hero">
+        <div class="hero-top">
+          <div>
+            <div class="small">今日の目標</div>
+            <div class="goal"><b>${done}</b> / ${G} 問</div>
+          </div>
+          <div class="streak" title="続けて学習した日数">${st ? `🔥 ${st} 日連続` : '今日から始めよう'}</div>
+        </div>
+        <div class="progress big"><i style="width:${Math.min(100, (done / G) * 100)}%"></i></div>
+        <button class="btn wide start" data-daily="1" type="button">
+          ${done >= G ? '🎉 目標達成！ もっとやる' : first ? '▶ はじめる' : '▶ 今日の学習をはじめる'}
+          <small>${nDue ? `復習 ${nDue} 問 ＋ 新しい問題 ${ROUND - nDue} 問` : `新しい問題 ${ROUND} 問`}</small>
+        </button>
+        <p class="small" style="margin:8px 0 0">${first
+          ? 'まずはこのボタンを押すだけで OK。まちがえた問題は、あとで自動的にもう一度出てきます。'
+          : 'まよったらこのボタン。まちがえた問題や、忘れかけた問題を先に出します。'}</p>
+      </div>
+
+      <div class="grid two">
+        <button class="tile" style="--tc:var(--accent)" data-pick="1">
+          <span class="ic">📚</span><span class="tt">分野をえらぶ</span>
+          <span class="ds">ことわざ・敬語・文法など、苦手な分野をクイズや暗記カードで集中練習。</span>
+        </button>
+        <button class="tile" style="--tc:var(--c-koku)" data-test="1">
+          <span class="ic">🏆</span><span class="tt">力だめし</span>
+          <span class="ds">15 問のテスト。ふつうのテストと、東海中レベルのテスト。</span>
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <strong>ぜんぶで ${all.total} 問のうち</strong>
+          <button class="linkbtn" data-stats="1" type="button">📊 くわしく見る</button>
+        </div>
+        ${masteryBar(all, '全体')}
+        ${stageLegend()}
+        <p class="small" style="margin:4px 0 0">覚えた <b>${all.master}</b>・もう少し <b>${all.fixed}</b>・にがて <b>${all.learn}</b>・まだ <b>${all.new}</b></p>
+      </div>
+      <p class="small center"><button class="linkbtn" data-help="1" type="button">❓ 使い方を見る</button></p>`);
+    on('[data-daily]', 'click', startDaily);
+    on('[data-pick]', 'click', () => practice('quiz'));
+    on('[data-test]', 'click', tests);
+    on('[data-stats]', 'click', analysis);
+    on('[data-help]', 'click', help);
+    if (!store.seenGuide) guide();
+  }
+
+  /* ───────── 分野をえらぶ（クイズ／暗記カード） ───────── */
+  function practice(mode) {
+    reset();
+    let level = 'all';
     const tiles = K.cats.map((c) => {
       const m = mastery(c.id);
-      return `<button class="tile" style="--tc:${K.color}" data-c="${c.id}">
+      const d = dueList(c.id).length;
+      return `<button class="tile" style="--tc:${mode === 'quiz' ? 'var(--accent)' : 'var(--ok)'}" data-c="${c.id}">
         <span class="tt">${esc(c.name)}</span>
         ${masteryBar(m, c.name, false)}
-        <span class="badge">習得 ${m.master}・定着 ${m.fixed}／${m.total}</span>
+        <span class="badge">${d ? `🔁 復習 ${d}・` : ''}覚えた ${m.master}／${m.total}</span>
       </button>`;
     }).join('');
     h(`
-      <h1>きょうも 1 歩ずつ。</h1>
-      <p class="lead">東海中学の入試に向けて、国語の「ことばの知識」と「文法」を練習しましょう（漢字の読み書きと文章読解は入っていません）。</p>
-      <div class="card today">
-        <div class="kpis">
-          <div class="kpi"><b>${st}</b><span>日連続</span></div>
-          <div class="kpi"><b>${td.n + td.cards}</b><span>今日の問題</span></div>
-          <div class="kpi"><b>${due.length}</b><span>復習待ち</span></div>
-          <div class="kpi"><b>${t.n ? pct(t.ok, t.n) + '%' : '―'}</b><span>正答率</span></div>
-        </div>
-        ${due.length
-          ? `<button class="btn wide" data-due="1" type="button">🔁 今日の復習をする（${Math.min(due.length, 20)} 問）</button>
-             <p class="small" style="margin:6px 0 0">まちがえた問題や、忘れかけたころの問題が出ます。毎日続けると、少ない時間で覚えられます。</p>`
-          : `<p style="margin:4px 0 0">✅ 今日の復習はすべて終わりました。${t.n ? '新しい問題に進みましょう。' : 'まずは問題を解いてみましょう。'}</p>`}
+      <h1>📚 分野をえらぶ</h1>
+      <div class="seg mode" role="group" aria-label="練習のしかた">
+        <button type="button" data-mode="quiz" aria-pressed="${mode === 'quiz'}">✏️ クイズ（10 問）</button>
+        <button type="button" data-mode="flash" aria-pressed="${mode === 'flash'}">🃏 暗記カード（20 枚）</button>
       </div>
-      <div class="grid">
-        <button class="tile" style="--tc:var(--c-koku)" data-top="1">
-          <span class="ic">🏯</span><span class="tt">東海レベル実戦</span>
-          <span class="ds">★★〜★★★の問題だけで 15 問。記述式もあり。</span>
-        </button>
-        <button class="tile" style="--tc:var(--c-mix)" data-mix="1">
-          <span class="ic">📝</span><span class="tt">ミニテスト</span>
-          <span class="ds">全分野から 15 問。時間を計って力だめし。</span>
-        </button>
-        <button class="tile" style="--tc:var(--ok)" data-flash="1">
-          <span class="ic">🃏</span><span class="tt">暗記カード</span>
-          <span class="ds">答えを思い出してからめくる。自分で「覚えた／あやしい／まだ」をつけます。</span>
-        </button>
-        <button class="tile" style="--tc:var(--accent)" data-setup="1">
-          <span class="ic">🎯</span><span class="tt">分野を選んで練習</span>
-          <span class="ds">分野・難易度・問題数を選べます。</span>
-        </button>
-        <button class="tile" style="--tc:var(--muted)" data-stats="1">
-          <span class="ic">📊</span><span class="tt">分析</span>
-          <span class="ds">学習の記録・分野別の習熟度・苦手な問題をグラフで。</span>
-        </button>
-      </div>
-      <h2>分野ごとに 10 問</h2>
-      <p class="small" style="margin-top:-6px">復習日が来た問題 → まだ解いていない問題 の順に出ます。帯は習熟度（濃いほど身についている）。</p>
-      <div class="grid cats">${tiles}</div>`);
+      <p class="lead" style="margin-top:10px">${mode === 'quiz'
+        ? '4 つの中から答えをえらんだり、答えを書いたりします。'
+        : '問題を見て、<b>答えを頭の中で思い出してから</b>カードをめくります。思い出せたかどうかを自分でえらびます。'}</p>
+      ${mode === 'quiz' ? `<div class="row" style="margin-bottom:12px"><span class="small">むずかしさ</span>
+        <div class="seg" role="group" aria-label="むずかしさ">
+          ${Object.entries(LEVELS).map(([k, v]) => `<button type="button" data-lv="${k}" aria-pressed="${k === level}">${v.name}</button>`).join('')}
+        </div></div>` : ''}
+      ${stageLegend()}
+      <div class="grid cats">${tiles}</div>
+      <p class="small center"><button class="linkbtn" data-setup="1" type="button">いくつかの分野を組み合わせる・問題数を変える</button></p>`);
+    onAll('[data-mode]', 'click', (e) => practice(e.currentTarget.dataset.mode));
+    onAll('[data-lv]', 'click', (e) => {
+      level = e.currentTarget.dataset.lv;
+      $app.querySelectorAll('[data-lv]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lv === level)));
+    });
     onAll('[data-c]', 'click', (e) => {
       const cid = e.currentTarget.dataset.c;
-      start(buildSet([{ sid: K.id, cid }], 10), catOf(K.id, cid).name);
+      const name = catOf(K.id, cid).name;
+      if (mode === 'quiz') start(buildSet([{ sid: K.id, cid }], 10, LEVELS[level].f), name);
+      else {
+        const due = dueList(cid);
+        const keys = new Set(due.map(qkey));
+        const more = buildSet([{ sid: K.id, cid }], 20).filter((q) => !keys.has(qkey(q)));
+        flashStart(due.concat(more).slice(0, 20), name);
+      }
     });
-    on('[data-due]', 'click', () => start(dueList().slice(0, 20), '今日の復習'));
     on('[data-setup]', 'click', setup);
-    on('[data-flash]', 'click', flashSetup);
+  }
+
+  /* ───────── 力だめし ───────── */
+  function tests() {
+    reset();
+    h(`
+      <h1>🏆 力だめし</h1>
+      <p class="lead">15 問のテストです。時間も計ります。終わったら、分野ごとの結果が見られます。</p>
+      <div class="grid two">
+        <button class="tile" style="--tc:var(--c-mix)" data-mix="1">
+          <span class="ic">📝</span><span class="tt">ふつうのテスト</span>
+          <span class="ds">全分野から、やさしい問題（★）〜むずかしい問題（★★★）まで。</span>
+        </button>
+        <button class="tile" style="--tc:var(--c-koku)" data-top="1">
+          <span class="ic">🏯</span><span class="tt">東海中レベル</span>
+          <span class="ds">むずかしい問題（★★〜★★★）だけ。答えを書く問題もあります。</span>
+        </button>
+      </div>`);
     on('[data-top]', 'click', () => {
-      const targets = K.cats.map((c) => ({ sid: K.id, cid: c.id }));
-      // 実戦では、文章読解で使う「気持ち」「説明文の言葉」「使い方」「慣用句」「文法」を多めに出す
+      // 文章読解で使う「気持ち」「説明文の言葉」「使い方」「慣用句」「文法」を多めに出す
       const focus = ['shinjo', 'hyoron', 'tsukai', 'kanyo', 'bunpo'].map((cid) => ({ sid: K.id, cid }));
       const set = buildSet(focus, 9, LEVELS.hard.f);
       const seenQ = new Set(set.map(qkey));
-      const rest = buildSet(targets, 12, LEVELS.hard.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 15 - set.length);
-      start(shuffle(set.concat(rest)), '東海レベル実戦');
+      const rest = buildSet(allTargets(), 12, LEVELS.hard.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 15 - set.length);
+      start(shuffle(set.concat(rest)), '東海中レベルのテスト');
     });
-    on('[data-mix]', 'click', () => start(buildSet(K.cats.map((c) => ({ sid: K.id, cid: c.id })), 15), 'ミニテスト'));
-    on('[data-stats]', 'click', analysis);
+    on('[data-mix]', 'click', () => start(buildSet(allTargets(), 15), 'ふつうのテスト'));
+  }
+
+  /* ───────── はじめての案内 ───────── */
+  const GUIDE = [
+    { ic: '▶', t: '毎日「今日の学習」を押すだけ', b: 'ホームの大きなボタンを押すと、10 問ずつ出てきます。<br>1 日の目標は 20 問（使い方のページで変えられます）。' },
+    { ic: '🔁', t: 'まちがえた問題は、また出てくる', b: 'まちがえた問題は、その日のうちにもう一度出ます。<br>正解するたびに「次に出るまで」が長くなります（1 日後 → 3 日後 → 1 週間後 → 2 週間後 → 1 か月後）。<br>だから、<b>にがてな問題ほどくり返し出て、覚えた問題はあまり出なくなります。</b>' },
+    { ic: '📊', t: '色の帯で、覚えぐあいがわかる', b: `${'<span class="mbar demo"><i class="m4" style="flex:3"></i><i class="m3" style="flex:2"></i><i class="m2" style="flex:2"></i><i class="m0" style="flex:3"></i></span>'}濃い色ほど、しっかり覚えています。<br>にがてな分野は「分野をえらぶ」で集中練習しましょう。` },
+  ];
+  function guide(i = 0) {
+    Charts.hideTip();
+    let el = document.getElementById('guide');
+    if (!el) { el = document.createElement('div'); el.id = 'guide'; el.className = 'modal'; document.body.appendChild(el); }
+    const g = GUIDE[i];
+    el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="gt">
+      <div class="dots">${GUIDE.map((_, j) => `<i class="${j === i ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="g-ic">${g.ic}</div>
+      <h2 id="gt">${g.t}</h2>
+      <p>${g.b}</p>
+      <div class="row" style="justify-content:space-between;margin-top:16px">
+        <button class="btn ghost" data-skip type="button">${i < GUIDE.length - 1 ? 'とばす' : 'もどる'}</button>
+        <button class="btn" data-next type="button">${i < GUIDE.length - 1 ? 'つぎへ' : 'はじめる！'}</button>
+      </div></div>`;
+    const close = () => { el.remove(); store.seenGuide = true; save(); };
+    el.querySelector('[data-next]').addEventListener('click', () => (i < GUIDE.length - 1 ? guide(i + 1) : close()));
+    el.querySelector('[data-skip]').addEventListener('click', () => (i < GUIDE.length - 1 ? close() : guide(i - 1)));
+    el.querySelector('[data-next]').focus();
+  }
+
+  /* ───────── 使い方 ───────── */
+  function help() {
+    reset();
+    h(`
+      <h1>❓ 使い方</h1>
+      <div class="card">
+        <h2 style="margin-top:0">毎日のやり方</h2>
+        <ol class="steps">
+          <li>ホームの <b>「▶ 今日の学習をはじめる」</b> を押す（10 問）。</li>
+          <li>目標の問題数になるまで、もう一度押す。</li>
+          <li>時間があれば <b>「分野をえらぶ」</b> で、にがてな分野を練習する。</li>
+          <li>週に 1 回くらい <b>「力だめし」</b> で 15 問のテストをして、 <b>📊</b> で成長を確かめる。</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">ボタンの説明</h2>
+        <dl class="defs">
+          <dt>▶ 今日の学習</dt><dd>復習の問題を先に、足りない分を新しい問題で 10 問。いちばんおすすめ。</dd>
+          <dt>📚 分野をえらぶ</dt><dd>分野を 1 つえらんで練習。<b>クイズ</b>（答えをえらぶ・書く）と<b>暗記カード</b>（思い出してからめくる）を切りかえられます。</dd>
+          <dt>🏆 力だめし</dt><dd>15 問のテスト。「東海中レベル」はむずかしい問題だけです。</dd>
+          <dt>📊 くわしく見る</dt><dd>毎日の問題数、正答率、分野ごとの覚えぐあい、よくまちがえる問題がわかります。</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">マークの意味</h2>
+        <dl class="defs">
+          <dt>色の帯</dt><dd>${stageLegend()}「覚えた」は 2 週間以上あけても正解できた問題、「もう少し」は数日あけて正解できた問題、「にがて」はまちがえた問題、「まだ」はまだ解いていない問題です。</dd>
+          <dt><span class="lv">★☆☆</span></dt><dd>やさしい（基本）。「むずかしさ」の「やさしめ」は ★ と ★★ の問題です。</dd>
+          <dt><span class="lv">★★☆</span></dt><dd>ふつう</dd>
+          <dt><span class="lv">★★★</span></dt><dd>むずかしい（東海中レベル）。「むずかしめ」は ★★ と ★★★ の問題です。</dd>
+          <dt>記述</dt><dd>答えを書く問題。<b>ひらがなで書けば OK</b> です（漢字でも正解になります）。</dd>
+          <dt>わからない</dt><dd>答えがわからないときに押すと、正解と解説が出ます。その問題はあとでまた出てきます。</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">暗記カードのつけ方</h2>
+        <dl class="defs">
+          <dt>× 思い出せない</dt><dd>今日のうちに、もう一度出ます。</dd>
+          <dt>△ あやしい</dt><dd>近いうち（1〜3 日後）にまた出ます。</dd>
+          <dt>○ 思い出せた</dt><dd>しばらくあけてから出ます（だんだん間があきます）。</dd>
+        </dl>
+        <p class="small" style="margin:0">正直につけるほど、効率よく覚えられます。</p>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">1 日の目標</h2>
+        <div class="seg" role="group" aria-label="1 日の目標">
+          ${[10, 20, 30, 50].map((n) => `<button type="button" data-goal="${n}" aria-pressed="${n === goal()}">${n} 問</button>`).join('')}
+        </div>
+        <p class="small" style="margin:8px 0 0">記録はこの端末のブラウザに保存されます。別の端末に移すときは 📊 のページの「記録を書き出す」を使ってください。</p>
+      </div>
+      <div class="row"><button class="btn sub" id="again" type="button">はじめての案内をもう一度見る</button>
+      <button class="btn" id="back" type="button">ホームへ</button></div>`);
+    onAll('[data-goal]', 'click', (e) => {
+      store.goal = +e.currentTarget.dataset.goal; save();
+      $app.querySelectorAll('[data-goal]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.goal === store.goal)));
+    });
+    on('#again', 'click', () => guide(0));
+    on('#back', 'click', home);
   }
 
   /* ───────── 出題設定 ───────── */
@@ -505,11 +670,18 @@
       <div class="card">
         <div class="score">${ok}<small> / ${rs.length} 問</small>　${p}<small>%</small></div>
         <p style="margin:6px 0 0">${msg}</p>
-        <p class="small" style="margin:4px 0 0">かかった時間 ${elapsed()}${wrongs.length ? '・まちがえた問題は「今日の復習」に入りました' : ''}</p>
+        <p class="small" style="margin:4px 0 0">かかった時間 ${elapsed()}${wrongs.length ? '・まちがえた問題は、あとでもう一度出てきます' : ''}</p>
         ${Object.keys(byCat).length > 1 ? `<div style="margin-top:10px">${catRows}</div>` : ''}
       </div>
+      ${session.daily ? `<div class="card hero">
+        <div class="small">今日の目標</div>
+        <div class="goal"><b>${todayCount()}</b> / ${goal()} 問</div>
+        <div class="progress big"><i style="width:${Math.min(100, (todayCount() / goal()) * 100)}%"></i></div>
+        <p style="margin:0 0 8px">${todayCount() >= goal() ? '🎉 今日の目標を達成しました！' : `あと <b>${goal() - todayCount()}</b> 問で目標達成！`}</p>
+        <button class="btn wide" id="more" type="button">▶ 続けて 10 問</button>
+      </div>` : ''}
       <div class="row" style="margin-bottom:14px">
-        ${wrongs.length ? '<button class="btn" id="redo" type="button">まちがえた問題をもう一度</button>' : ''}
+        ${wrongs.length ? '<button class="btn sub" id="redo" type="button">まちがえた問題をもう一度</button>' : ''}
         <button class="btn sub" id="home2" type="button">ホームへ</button>
       </div>
       <div class="card">
@@ -525,38 +697,10 @@
       </div>`);
     on('#redo', 'click', () => start(wrongs.map((q) => Object.assign({}, q, { choices: q.choices && shuffle(q.choices) })), 'もう一度'));
     on('#home2', 'click', home);
+    on('#more', 'click', startDaily);
   }
 
   /* ───────── 暗記カード ───────── */
-  function flashSetup() {
-    reset();
-    const dueAll = dueList().length;
-    h(`
-      <h1>🃏 暗記カード</h1>
-      <p class="lead">問題を見て、<b>答えを頭の中で思い出してから</b>カードをめくります。思い出せたかどうかを自分で選ぶと、忘れかけたころにまた出てきます。</p>
-      <div class="card">
-        <button class="btn wide" data-fc="" type="button">全分野（復習待ち ${dueAll} 問を優先）</button>
-      </div>
-      <div class="grid cats">
-        ${K.cats.map((c) => {
-          const m = mastery(c.id);
-          const d = dueList(c.id).length;
-          return `<button class="tile" style="--tc:var(--ok)" data-fc="${c.id}">
-            <span class="tt">${esc(c.name)}</span>
-            ${masteryBar(m, c.name, false)}
-            <span class="badge">復習待ち ${d}・未学習 ${m.new}</span></button>`;
-        }).join('')}
-      </div>`);
-    onAll('[data-fc]', 'click', (e) => {
-      const cid = e.currentTarget.dataset.fc;
-      const due = dueList(cid || undefined);
-      const targets = (cid ? [cid] : K.cats.map((c) => c.id)).map((x) => ({ sid: K.id, cid: x }));
-      const keys = new Set(due.map(qkey));
-      const more = buildSet(targets, 20).filter((q) => !keys.has(qkey(q)));
-      flashStart(due.concat(more).slice(0, 20), cid ? catOf(K.id, cid).name : '全分野');
-    });
-  }
-
   const asRecall = (s) => s.replace(/として正しいものはどれですか。/, 'は？').replace(/はどれですか。/, 'は？');
 
   function flashStart(cards, title) {
@@ -604,9 +748,9 @@
       $app.querySelector('#act').innerHTML = `
         <p class="small" style="margin:0 0 6px">思い出せましたか？</p>
         <div class="grade">
-          <button class="btn g-ng" data-g="ng" type="button">まだ<small>1</small></button>
-          <button class="btn g-hard" data-g="hard" type="button">あやしい<small>2</small></button>
-          <button class="btn g-ok" data-g="ok" type="button">覚えた<small>3</small></button>
+          <button class="btn g-ng" data-g="ng" type="button"><b>×</b>思い出せない</button>
+          <button class="btn g-hard" data-g="hard" type="button"><b>△</b>あやしい</button>
+          <button class="btn g-ok" data-g="ok" type="button"><b>○</b>思い出せた</button>
         </div>`;
       onAll('[data-g]', 'click', (e) => grade(e.currentTarget.dataset.g));
     };
@@ -627,14 +771,14 @@
       <h1>🃏 ${esc(session.title)} の結果</h1>
       <div class="card">
         <div class="kpis">
-          <div class="kpi"><b>${cnt('ok')}</b><span>覚えた</span></div>
-          <div class="kpi"><b>${cnt('hard')}</b><span>あやしい</span></div>
-          <div class="kpi"><b>${cnt('ng')}</b><span>まだ</span></div>
+          <div class="kpi"><b>${cnt('ok')}</b><span>○ 思い出せた</span></div>
+          <div class="kpi"><b>${cnt('hard')}</b><span>△ あやしい</span></div>
+          <div class="kpi"><b>${cnt('ng')}</b><span>× 思い出せない</span></div>
         </div>
-        <p class="small" style="margin:8px 0 0">「まだ」は今日中に、「あやしい」は近いうちに、「覚えた」は数日〜数週間後にまた出ます。</p>
+        <p class="small" style="margin:8px 0 0">「×」は今日のうちに、「△」は近いうちに、「○」は数日〜数週間後にまた出ます。</p>
       </div>
       <div class="row">
-        ${weak.length ? '<button class="btn" id="again" type="button">「まだ・あやしい」だけもう一度</button>' : ''}
+        ${weak.length ? '<button class="btn" id="again" type="button">「×」「△」だけもう一度</button>' : ''}
         <button class="btn sub" id="home2" type="button">ホームへ</button>
       </div>`);
     on('#again', 'click', () => flashStart(shuffle(weak), session.title));
@@ -664,7 +808,7 @@
     const tips = advice(allM);
 
     h(`
-      <h1>📊 分析</h1>
+      <h1>📊 学習の記録</h1>
       <p class="lead">学習の記録はこの端末のブラウザに保存されています。グラフにふれると、くわしい数字が出ます。</p>
 
       <div class="kpis big">
@@ -673,7 +817,7 @@
         <div class="kpi"><b>${t.n + cardsTotal}</b><span>解いた問題・カード</span></div>
         <div class="kpi"><b>${t.n ? pct(t.ok, t.n) + '%' : '―'}</b><span>クイズの正答率</span></div>
         <div class="kpi"><b>${Math.round(totalSec / 60)}</b><span>学習時間（分）</span></div>
-        <div class="kpi"><b>${pct(sumM.master, sumM.total)}%</b><span>習得した問題</span></div>
+        <div class="kpi"><b>${pct(sumM.master, sumM.total)}%</b><span>覚えた問題</span></div>
       </div>
 
       ${tips.length ? `<div class="card advice"><strong>💡 次にやるとよいこと</strong><ul>${tips.map((x) => `<li>${x}</li>`).join('')}</ul></div>` : ''}
@@ -696,20 +840,20 @@
       </div>
 
       <div class="card">
-        <div class="ch-title">分野別の習熟度</div>
-        <div class="legend"><i class="m4"></i>習得<i class="m3"></i>定着中<i class="m2"></i>学習中<i class="m0"></i>未学習</div>
+        <div class="ch-title">分野ごとの覚えぐあい</div>
+        ${stageLegend()}
         ${allM.map(({ c, m }) => `<div class="stat-row mrow"><span>${esc(c.name)}</span>${masteryBar(m, c.name)}<span class="pc">${pct(m.master, m.total)}%</span></div>`).join('')}
-        <p class="small" style="margin:8px 0 0">習得＝14 日以上あけても正解できた／定着中＝数日あけて正解できた／学習中＝まちがえた・覚えはじめ</p>
+        <p class="small" style="margin:8px 0 0">覚えた＝2 週間以上あけても正解できた／もう少し＝数日あけて正解できた／にがて＝まちがえた</p>
       </div>
 
       <div class="card">
-        <div class="ch-title">分野別の正答率<span class="small">（低い順・クイズ）</span></div>
+        <div class="ch-title">分野ごとの正答率<span class="small">（低い順・クイズ）</span></div>
         ${allM.slice().sort((a, b) => (a.st.n ? a.st.ok / a.st.n : 2) - (b.st.n ? b.st.ok / b.st.n : 2)).map(({ c, st }) =>
           `<div class="stat-row"><span>${esc(c.name)}</span><span class="bar">${st.n ? `<i style="width:${pct(st.ok, st.n)}%" data-tip="${esc(c.name)}：${st.ok}/${st.n} 問正解"></i>` : ''}</span><span class="pc">${st.n ? pct(st.ok, st.n) + '%' : '―'}</span></div>`).join('')}
       </div>
 
       <div class="card">
-        <div class="ch-title">難易度別の正答率</div>
+        <div class="ch-title">むずかしさ別の正答率</div>
         ${[1, 2, 3].map((lv) => { const L = store.lvs[lv] || { n: 0, ok: 0 }; return `<div class="stat-row"><span class="lv" style="font-size:15px">${stars(lv)}</span><span class="bar">${L.n ? `<i style="width:${pct(L.ok, L.n)}%" data-tip="${stars(lv)}：${L.ok}/${L.n} 問正解"></i>` : ''}</span><span class="pc">${L.n ? pct(L.ok, L.n) + '%' : '―'}</span></div>`; }).join('')}
         <p class="small" style="margin:8px 0 0">★★★（東海中レベル）で 7 割をこえるのが目標です。</p>
       </div>
@@ -793,16 +937,16 @@
   function advice(allM) {
     const out = [];
     const due = dueList().length;
-    if (due) out.push(`復習待ちが <b>${due} 問</b>あります。まずは「今日の復習」から。`);
+    if (due) out.push(`復習待ちが <b>${due} 問</b>あります。まずは「今日の学習」から。`);
     const tried = allM.filter((x) => x.st.n >= 5);
     if (tried.length) {
       const w = tried.slice().sort((a, b) => a.st.ok / a.st.n - b.st.ok / b.st.n)[0];
-      if (w.st.ok / w.st.n < 0.8) out.push(`いちばん正答率が低いのは <b>${esc(w.c.name)}</b>（${pct(w.st.ok, w.st.n)}%）。暗記カードで集中して覚えましょう。`);
+      if (w.st.ok / w.st.n < 0.8) out.push(`いちばん正答率が低いのは <b>${esc(w.c.name)}</b>（${pct(w.st.ok, w.st.n)}%）。「分野をえらぶ」の暗記カードで集中して覚えましょう。`);
     }
     const untouched = allM.filter((x) => !x.c.gens && x.m.new === x.m.total);
     if (untouched.length) out.push(`まだ手をつけていない分野：${untouched.map((x) => `<b>${esc(x.c.name)}</b>`).join('・')}`);
     const L3 = store.lvs[3];
-    if (L3 && L3.n >= 10 && L3.ok / L3.n < 0.7) out.push(`★★★の正答率が ${pct(L3.ok, L3.n)}% です。「東海レベル実戦」で発展問題に慣れましょう。`);
+    if (L3 && L3.n >= 10 && L3.ok / L3.n < 0.7) out.push(`★★★の正答率が ${pct(L3.ok, L3.n)}% です。「力だめし」の「東海中レベル」でむずかしい問題に慣れましょう。`);
     const d = store.days[today()];
     if (!d && streak() > 0) out.push(`今日はまだ学習していません。${streak()} 日連続の記録を続けよう！`);
     return out;
