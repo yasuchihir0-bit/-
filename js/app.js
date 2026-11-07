@@ -1,14 +1,14 @@
-/* 東海中 受験トレーニング：画面とロジック */
+/* 東海中 国語トレーニング：画面とロジック */
 (function () {
   'use strict';
   const { pick, shuffle, R, req, fmt, parseAnswer, esc, rich } = window.U;
 
-  const SUBJECTS = [window.MATH, window.SCIENCE, window.SOCIAL];
+  const SUBJECTS = [window.KOKUGO];
   const SUBJ = Object.fromEntries(SUBJECTS.map((s) => [s.id, s]));
   const $app = document.getElementById('app');
 
   /* ───────── 保存（この端末のブラウザ内のみ） ───────── */
-  const KEY = 'tokai-prep-v1';
+  const KEY = 'tokai-kokugo-v1';
   const blank = () => ({ stats: {}, wrong: [], sessions: 0 });
   let store = blank();
   try {
@@ -92,38 +92,47 @@
   /* ───────── ホーム ───────── */
   function home() {
     session = null; setKeys(null);
-    const tiles = SUBJECTS.map((s) => {
-      const t = subjTotals(s.id);
-      return `<button class="tile" style="--tc:${s.color}" data-s="${s.id}">
-        <span class="ic">${s.icon}</span><span class="tt">${s.name}</span>
-        <span class="ds">${s.cats.map((c) => esc(c.name)).join('・')}</span>
-        <span class="badge">${t.n ? `これまで ${t.n} 問・正答率 ${pct(t.ok, t.n)}%` : 'まだ解いていません'}</span>
+    const K = SUBJECTS[0];
+    const t = subjTotals(K.id);
+    const tiles = K.cats.map((c) => {
+      const st = store.stats[`${K.id}:${c.id}`];
+      return `<button class="tile" style="--tc:${K.color}" data-c="${c.id}">
+        <span class="tt">${esc(c.name)}</span>
+        <span class="badge">${st ? `${st.n} 問・正答率 ${pct(st.ok, st.n)}%` : 'まだ解いていません'}</span>
       </button>`;
     }).join('');
     const wn = store.wrong.length;
     h(`
       <h1>きょうも 1 歩ずつ。</h1>
-      <p class="lead">東海中学の入試に向けて、算数・理科・社会の問題を練習しましょう。算数と理科の計算問題は、毎回数字が変わります。</p>
-      <div class="grid">${tiles}
+      <p class="lead">東海中学の入試に向けて、国語の「ことばの知識」と「文法」を練習しましょう（漢字の読み書きと文章読解は入っていません）。${t.n ? `これまで ${t.n} 問・正答率 ${pct(t.ok, t.n)}%。` : ''}</p>
+      <div class="grid">
         <button class="tile" style="--tc:var(--c-mix)" data-mix="1">
-          <span class="ic">📝</span><span class="tt">ミニ模試</span>
-          <span class="ds">3 教科から 15 問。時間を計って本番の練習。</span>
+          <span class="ic">📝</span><span class="tt">ミニテスト</span>
+          <span class="ds">全分野から 15 問。時間を計って力だめし。</span>
         </button>
         <button class="tile" style="--tc:var(--ng)" data-review="1" ${wn ? '' : 'disabled'}>
           <span class="ic">🔁</span><span class="tt">まちがい復習</span>
           <span class="ds">${wn ? `まちがえた問題が ${wn} 問あります。` : 'まちがえた問題はまだありません。'}</span>
         </button>
+        <button class="tile" style="--tc:var(--accent)" data-setup="1">
+          <span class="ic">🎯</span><span class="tt">分野を選んで練習</span>
+          <span class="ds">いくつかの分野を組み合わせて、問題数も選べます。</span>
+        </button>
         <button class="tile" style="--tc:var(--muted)" data-stats="1">
           <span class="ic">📊</span><span class="tt">成績</span>
           <span class="ds">分野ごとの正答率を見て、苦手を見つけよう。</span>
         </button>
-      </div>`);
-    onAll('[data-s]', 'click', (e) => setup(e.currentTarget.dataset.s));
+      </div>
+      <h2>分野ごとに 10 問</h2>
+      <div class="grid cats">${tiles}</div>`);
+    onAll('[data-c]', 'click', (e) => {
+      const cid = e.currentTarget.dataset.c;
+      start(buildSet([{ sid: K.id, cid }], 10), catOf(K.id, cid).name);
+    });
+    on('[data-setup]', 'click', () => setup(K.id));
     on('[data-mix]', 'click', () => {
-      const targets = [];
-      SUBJECTS.forEach((s) => s.cats.forEach((c) => targets.push({ sid: s.id, cid: c.id })));
-      const per = SUBJECTS.map((s) => buildSet(targets.filter((t) => t.sid === s.id), 5));
-      start(per.flat(), 'ミニ模試');
+      const targets = K.cats.map((c) => ({ sid: K.id, cid: c.id }));
+      start(buildSet(targets, 15), 'ミニテスト');
     });
     on('[data-review]', 'click', () => start(shuffle(store.wrong).slice(0, 10).map((q) => {
       const c = Object.assign({}, q, { review: true });
@@ -238,8 +247,7 @@
         <div class="feedback ${ok ? 'ok' : 'ng'}">
           <div class="mark">${ok ? '⭕ 正解！' : '❌ ざんねん'}</div>
           ${ok ? '' : `<div>正解：<strong>${ansText(q)}</strong></div>`}
-          <div class="exp-title">解説</div>
-          <div class="exp">${rich(q.exp)}</div>
+          ${q.exp ? `<div class="exp-title">解説</div><div class="exp">${rich(q.exp)}</div>` : ''}
         </div>`;
       $app.querySelectorAll('#input button, #input input').forEach((el) => { el.disabled = true; });
       nb.focus();

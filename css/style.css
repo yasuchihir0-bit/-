@@ -14,6 +14,7 @@
   --c-sci: #138a72;
   --c-soc: #c05b12;
   --c-mix: #7a3fd1;
+  --c-koku: #b4373c;
   --shadow: 0 1px 3px rgba(20, 30, 60, .08), 0 4px 14px rgba(20, 30, 60, .06);
   --radius: 14px;
   color-scheme: light;
@@ -34,6 +35,7 @@
     --c-sci: #2fbf9f;
     --c-soc: #f0883e;
     --c-mix: #a77bf3;
+    --c-koku: #ef6f6c;
     --shadow: 0 1px 3px rgba(0, 0, 0, .4);
     color-scheme: dark;
   }
@@ -41,7 +43,7 @@
 :root[data-theme="dark"] {
   --bg: #11151d; --card: #1a202b; --text: #e6e9ef; --muted: #9aa3b2; --line: #2d3545;
   --accent: #4c8dff; --ok: #4cc06a; --ok-bg: #16301f; --ng: #ff6b6b; --ng-bg: #3a1c1f;
-  --c-math: #4c8dff; --c-sci: #2fbf9f; --c-soc: #f0883e; --c-mix: #a77bf3;
+  --c-math: #4c8dff; --c-sci: #2fbf9f; --c-soc: #f0883e; --c-mix: #a77bf3; --c-koku: #ef6f6c;
   --shadow: 0 1px 3px rgba(0, 0, 0, .4); color-scheme: dark;
 }
 
@@ -189,3 +191,6 @@ h2 { font-size: 20px; margin: 20px 0 10px; }
   .qtext { font-size: 18px; }
 }
 .tile:disabled { opacity: .5; cursor: default; transform: none; }
+.grid.cats { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.grid.cats .tile { padding: 12px 14px; }
+.grid.cats .tile .tt { font-size: 17px; }

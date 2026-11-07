@@ -1,6 +1,6 @@
 {
-  "name": "東海中 受験トレーニング",
-  "short_name": "東海中トレ",
+  "name": "東海中 国語トレーニング",
+  "short_name": "東海中国語",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f4f6fb",
