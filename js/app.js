@@ -141,9 +141,7 @@
 
   /* 難易度のしぼりこみ */
   const LEVELS = {
-    all: { name: 'すべて', f: null },
-    basic: { name: 'やさしめ', f: (lv) => lv <= 2 },
-    hard: { name: 'むずかしめ', f: (lv) => lv >= 2 },
+    all: { name: '★★と★★★', f: null },
     top: { name: '★★★だけ', f: (lv) => lv >= 3 },
   };
   const stars = (lv) => '★'.repeat(lv) + '☆'.repeat(3 - lv);
@@ -255,22 +253,12 @@
   const stageLegend = () => `<div class="legend"><i class="m4"></i>覚えた<i class="m3"></i>もう少し<i class="m2"></i>にがて<i class="m0"></i>まだ</div>`;
 
   const allTargets = () => K.cats.map((c) => ({ sid: K.id, cid: c.id }));
-  /* むずかしさのモード：東海中（標準）／基本から */
-  const MODES = {
-    tokai: { name: '東海中モード', note: '★★〜★★★の問題を中心に出します（★★★が半分）' },
-    basic: { name: '基本から', note: '★から順に、全部のむずかしさの問題を出します' },
-  };
-  const mode = () => store.mode || 'tokai';
-  /* 新しい問題を n 問：東海中モードでは半分を★★★、残りを★★以上から */
+  /* 新しい問題を n 問：半分を★★★、残りを★★〜★★★から */
   function freshSet(targets, n, exclude = new Set()) {
     const pickNew = (k, f) => buildSet(targets, k + 5, f).filter((q) => !exclude.has(qkey(q)));
-    let out;
-    if (mode() === 'tokai') {
-      const hard = pickNew(Math.ceil(n / 2), LEVELS.top.f).slice(0, Math.ceil(n / 2));
-      hard.forEach((q) => exclude.add(qkey(q)));
-      out = hard.concat(pickNew(n - hard.length, LEVELS.hard.f).slice(0, n - hard.length));
-    } else out = pickNew(n, null).slice(0, n);
-    return shuffle(out);
+    const hard = pickNew(Math.ceil(n / 2), LEVELS.top.f).slice(0, Math.ceil(n / 2));
+    hard.forEach((q) => exclude.add(qkey(q)));
+    return shuffle(hard.concat(pickNew(n - hard.length, null).slice(0, n - hard.length)));
   }
   const goal = () => store.goal || 20;
   const todayCount = () => { const d = store.days[today()]; return d ? d.n + (d.cards || 0) : 0; };
@@ -307,7 +295,7 @@
           </div>
           <div class="hero-right">
             <div class="streak" title="続けて学習した日数">${st ? `🔥 ${st} 日連続` : '今日から始めよう'}</div>
-            <button class="chip" data-mode-help type="button" title="${MODES[mode()].note}">${mode() === 'tokai' ? '🏯' : '🌱'} ${MODES[mode()].name}</button>
+            <span class="chip" title="★★（標準）と★★★（東海中レベル）だけを出します">🏯 東海中レベル</span>
           </div>
         </div>
         <div class="progress big"><i style="width:${Math.min(100, (done / G) * 100)}%"></i></div>
@@ -346,14 +334,13 @@
     on('[data-test]', 'click', tests);
     on('[data-stats]', 'click', analysis);
     on('[data-help]', 'click', help);
-    on('[data-mode-help]', 'click', help);
     if (!store.seenGuide) guide();
   }
 
   /* ───────── 分野をえらぶ（クイズ／暗記カード） ───────── */
   function practice(mode) {
     reset();
-    let level = store.mode === 'basic' ? 'all' : 'hard';
+    let level = 'all';
     const tiles = K.cats.map((c) => {
       const m = mastery(c.id);
       const d = dueList(c.id).length;
@@ -407,7 +394,7 @@
       <div class="grid two">
         <button class="tile" style="--tc:var(--c-mix)" data-mix="1">
           <span class="ic">📝</span><span class="tt">ふつうのテスト</span>
-          <span class="ds">全分野から、やさしい問題（★）〜むずかしい問題（★★★）まで。</span>
+          <span class="ds">全分野から、★★（標準）と★★★（東海中レベル）を合わせて 15 問。</span>
         </button>
         <button class="tile" style="--tc:var(--c-koku)" data-top="1">
           <span class="ic">🏯</span><span class="tt">東海中レベル</span>
@@ -421,7 +408,7 @@
       const seenQ = new Set(set.map(qkey));
       const more = buildSet(allTargets(), 8, LEVELS.top.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 10 - set.length);
       more.forEach((q) => seenQ.add(qkey(q)));
-      const rest = buildSet(allTargets(), 10, LEVELS.hard.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 15 - set.length - more.length);
+      const rest = buildSet(allTargets(), 10, null).filter((q) => !seenQ.has(qkey(q))).slice(0, 15 - set.length - more.length);
       start(shuffle(set.concat(more, rest)), '東海中レベルのテスト');
     });
     on('[data-mix]', 'click', () => start(buildSet(allTargets(), 15), 'ふつうのテスト'));
@@ -480,9 +467,8 @@
         <h2 style="margin-top:0">マークの意味</h2>
         <dl class="defs">
           <dt>色の帯</dt><dd>${stageLegend()}「覚えた」は 2 週間以上あけても正解できた問題、「もう少し」は数日あけて正解できた問題、「にがて」はまちがえた問題、「まだ」はまだ解いていない問題です。</dd>
-          <dt><span class="lv">★☆☆</span></dt><dd>やさしい（基本）。「むずかしさ」の「やさしめ」は ★ と ★★ の問題です。</dd>
-          <dt><span class="lv">★★☆</span></dt><dd>ふつう</dd>
-          <dt><span class="lv">★★★</span></dt><dd>むずかしい（東海中レベル）。「むずかしめ」は ★★ と ★★★ の問題です。</dd>
+          <dt><span class="lv">★★☆</span></dt><dd>標準（中学入試でよく出るレベル）</dd>
+          <dt><span class="lv">★★★</span></dt><dd>むずかしい（東海中・難関校レベル）。新しい問題の半分は ★★★ です。</dd>
           <dt>すべて選ぶ</dt><dd>正しいものを<b>全部</b>選んでから「答える」を押す問題。1 つでも多かったり足りなかったりすると不正解です。</dd>
           <dt>記述</dt><dd>答えを書く問題。<b>ひらがなで書けば OK</b> です（漢字でも正解になります）。</dd>
           <dt>わからない</dt><dd>答えがわからないときに押すと、正解と解説が出ます。その問題はあとでまた出てきます。</dd>
@@ -498,13 +484,6 @@
         <p class="small" style="margin:0">正直につけるほど、効率よく覚えられます。</p>
       </div>
       <div class="card">
-        <h2 style="margin-top:0">むずかしさのモード</h2>
-        <div class="seg" role="group" aria-label="むずかしさのモード">
-          ${Object.entries(MODES).map(([k, v]) => `<button type="button" data-setmode="${k}" aria-pressed="${k === mode()}">${k === 'tokai' ? '🏯' : '🌱'} ${v.name}</button>`).join('')}
-        </div>
-        <p class="small" id="modeNote" style="margin:8px 0 0">${MODES[mode()].note}。復習の問題は、モードに関係なく出ます。</p>
-      </div>
-      <div class="card">
         <h2 style="margin-top:0">1 日の目標</h2>
         <div class="seg" role="group" aria-label="1 日の目標">
           ${[10, 20, 30, 50].map((n) => `<button type="button" data-goal="${n}" aria-pressed="${n === goal()}">${n} 問</button>`).join('')}
@@ -516,11 +495,6 @@
     onAll('[data-goal]', 'click', (e) => {
       store.goal = +e.currentTarget.dataset.goal; save();
       $app.querySelectorAll('[data-goal]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.goal === store.goal)));
-    });
-    onAll('[data-setmode]', 'click', (e) => {
-      store.mode = e.currentTarget.dataset.setmode; save();
-      $app.querySelectorAll('[data-setmode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.setmode === store.mode)));
-      $app.querySelector('#modeNote').textContent = `${MODES[mode()].note}。復習の問題は、モードに関係なく出ます。`;
     });
     on('#again', 'click', () => guide(0));
     on('#back', 'click', home);
@@ -922,7 +896,7 @@
 
       <div class="card">
         <div class="ch-title">むずかしさ別の正答率</div>
-        ${[1, 2, 3].map((lv) => { const L = store.lvs[lv] || { n: 0, ok: 0 }; return `<div class="stat-row"><span class="lv" style="font-size:15px">${stars(lv)}</span><span class="bar">${L.n ? `<i style="width:${pct(L.ok, L.n)}%" data-tip="${stars(lv)}：${L.ok}/${L.n} 問正解"></i>` : ''}</span><span class="pc">${L.n ? pct(L.ok, L.n) + '%' : '―'}</span></div>`; }).join('')}
+        ${[2, 3].map((lv) => { const L = store.lvs[lv] || { n: 0, ok: 0 }; return `<div class="stat-row"><span class="lv" style="font-size:15px">${stars(lv)}</span><span class="bar">${L.n ? `<i style="width:${pct(L.ok, L.n)}%" data-tip="${stars(lv)}：${L.ok}/${L.n} 問正解"></i>` : ''}</span><span class="pc">${L.n ? pct(L.ok, L.n) + '%' : '―'}</span></div>`; }).join('')}
         <p class="small" style="margin:8px 0 0">★★★（東海中レベル）で 7 割をこえるのが目標です。</p>
       </div>
 
