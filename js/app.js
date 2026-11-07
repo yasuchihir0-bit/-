@@ -21,9 +21,11 @@
   /* ───────── 問題の見分け（キー） ───────── */
   const qkey = (q) => `${q.subject}|${q.q}|${q.ans}`;
   const lvOf = (x) => x.lv || 1;
+  const ansOf = (item) => (item.a ? item.a[0] : item.ok ? item.ok.join('／') : item.c[0]);
+  const bkey = (sid, item) => `${sid}|${item.q}|${ansOf(item)}`;
   const BANK = new Map();
   SUBJECTS.forEach((s) => (s.bank || []).forEach((item, idx) => {
-    BANK.set(`${s.id}|${item.q}|${item.a ? item.a[0] : item.c[0]}`, { s, item, idx });
+    BANK.set(bkey(s.id, item), { s, item, idx });
   }));
 
   /* ───────── 保存（この端末のブラウザ内のみ） ───────── */
@@ -63,6 +65,7 @@
     const o = { subject: q.subject, cat: q.cat, type: q.type, q: q.q, ans: q.ans, exp: q.exp, lv: lvOf(q) };
     if (q.choices) o.choices = q.choices.slice();
     if (q.accept) o.accept = q.accept.slice();
+    if (q.correct) o.correct = q.correct.slice();
     return o;
   }
 
@@ -110,6 +113,7 @@
   function fromBank(subject, item, idx) {
     const base = { subject: subject.id, cat: item.cat, id: `${subject.id}-${idx}`, q: item.q, exp: item.exp, lv: lvOf(item) };
     if (item.a) return Object.assign(base, { type: 'text', ans: item.a[0], accept: item.a });
+    if (item.ok) return Object.assign(base, { type: 'multi', choices: shuffle(item.c), correct: item.ok.slice(), ans: ansOf(item) });
     return Object.assign(base, { type: 'choice', choices: shuffle(item.c), ans: item.c[0] });
   }
 
@@ -161,7 +165,7 @@
     const pools = targets.map(({ sid, cid }) => {
       const subject = SUBJ[sid], cat = catOf(sid, cid);
       const bank = (subject.bank || [])
-        .map((item, idx) => ({ item, idx, key: `${sid}|${item.q}|${item.a ? item.a[0] : item.c[0]}` }))
+        .map((item, idx) => ({ item, idx, key: bkey(sid, item) }))
         .filter((x) => x.item.cat === cid && (!filter || filter(lvOf(x.item))));
       return { subject, cat, bank: prioritized(bank) };
     }).filter((p) => p.cat);
@@ -219,7 +223,7 @@
     K.bank.forEach((item) => {
       if (item.cat !== cid) return;
       r.total++;
-      r[stageOf(store.cards[`${K.id}|${item.q}|${item.a ? item.a[0] : item.c[0]}`])]++;
+      r[stageOf(store.cards[bkey(K.id, item)])]++;
     });
     return r;
   }
@@ -251,6 +255,23 @@
   const stageLegend = () => `<div class="legend"><i class="m4"></i>覚えた<i class="m3"></i>もう少し<i class="m2"></i>にがて<i class="m0"></i>まだ</div>`;
 
   const allTargets = () => K.cats.map((c) => ({ sid: K.id, cid: c.id }));
+  /* むずかしさのモード：東海中（標準）／基本から */
+  const MODES = {
+    tokai: { name: '東海中モード', note: '★★〜★★★の問題を中心に出します（★★★が半分）' },
+    basic: { name: '基本から', note: '★から順に、全部のむずかしさの問題を出します' },
+  };
+  const mode = () => store.mode || 'tokai';
+  /* 新しい問題を n 問：東海中モードでは半分を★★★、残りを★★以上から */
+  function freshSet(targets, n, exclude = new Set()) {
+    const pickNew = (k, f) => buildSet(targets, k + 5, f).filter((q) => !exclude.has(qkey(q)));
+    let out;
+    if (mode() === 'tokai') {
+      const hard = pickNew(Math.ceil(n / 2), LEVELS.top.f).slice(0, Math.ceil(n / 2));
+      hard.forEach((q) => exclude.add(qkey(q)));
+      out = hard.concat(pickNew(n - hard.length, LEVELS.hard.f).slice(0, n - hard.length));
+    } else out = pickNew(n, null).slice(0, n);
+    return shuffle(out);
+  }
   const goal = () => store.goal || 20;
   const todayCount = () => { const d = store.days[today()]; return d ? d.n + (d.cards || 0) : 0; };
 
@@ -259,7 +280,7 @@
   function dailySet() {
     const due = dueList().slice(0, ROUND);
     const keys = new Set(due.map(qkey));
-    const fresh = buildSet(allTargets(), ROUND + 5).filter((q) => !keys.has(qkey(q))).slice(0, ROUND - due.length);
+    const fresh = freshSet(allTargets(), ROUND - due.length, keys);
     return { set: due.concat(fresh), nDue: due.length, nNew: fresh.length };
   }
   function startDaily() {
@@ -284,7 +305,10 @@
             <div class="small">今日の目標</div>
             <div class="goal"><b>${done}</b> / ${G} 問</div>
           </div>
-          <div class="streak" title="続けて学習した日数">${st ? `🔥 ${st} 日連続` : '今日から始めよう'}</div>
+          <div class="hero-right">
+            <div class="streak" title="続けて学習した日数">${st ? `🔥 ${st} 日連続` : '今日から始めよう'}</div>
+            <button class="chip" data-mode-help type="button" title="${MODES[mode()].note}">${mode() === 'tokai' ? '🏯' : '🌱'} ${MODES[mode()].name}</button>
+          </div>
         </div>
         <div class="progress big"><i style="width:${Math.min(100, (done / G) * 100)}%"></i></div>
         <button class="btn wide start" data-daily="1" type="button">
@@ -322,13 +346,14 @@
     on('[data-test]', 'click', tests);
     on('[data-stats]', 'click', analysis);
     on('[data-help]', 'click', help);
+    on('[data-mode-help]', 'click', help);
     if (!store.seenGuide) guide();
   }
 
   /* ───────── 分野をえらぶ（クイズ／暗記カード） ───────── */
   function practice(mode) {
     reset();
-    let level = 'all';
+    let level = store.mode === 'basic' ? 'all' : 'hard';
     const tiles = K.cats.map((c) => {
       const m = mastery(c.id);
       const d = dueList(c.id).length;
@@ -386,16 +411,18 @@
         </button>
         <button class="tile" style="--tc:var(--c-koku)" data-top="1">
           <span class="ic">🏯</span><span class="tt">東海中レベル</span>
-          <span class="ds">むずかしい問題（★★〜★★★）だけ。答えを書く問題もあります。</span>
+          <span class="ds">★★★（難関校レベル）が 10 問＋★★が 5 問。「すべて選ぶ」「答えを書く」問題もあります。</span>
         </button>
       </div>`);
     on('[data-top]', 'click', () => {
       // 文章読解で使う「気持ち」「説明文の言葉」「使い方」「慣用句」「文法」を多めに出す
       const focus = ['shinjo', 'hyoron', 'tsukai', 'kanyo', 'bunpo'].map((cid) => ({ sid: K.id, cid }));
-      const set = buildSet(focus, 9, LEVELS.hard.f);
+      const set = buildSet(focus, 6, LEVELS.top.f);
       const seenQ = new Set(set.map(qkey));
-      const rest = buildSet(allTargets(), 12, LEVELS.hard.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 15 - set.length);
-      start(shuffle(set.concat(rest)), '東海中レベルのテスト');
+      const more = buildSet(allTargets(), 8, LEVELS.top.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 10 - set.length);
+      more.forEach((q) => seenQ.add(qkey(q)));
+      const rest = buildSet(allTargets(), 10, LEVELS.hard.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 15 - set.length - more.length);
+      start(shuffle(set.concat(more, rest)), '東海中レベルのテスト');
     });
     on('[data-mix]', 'click', () => start(buildSet(allTargets(), 15), 'ふつうのテスト'));
   }
@@ -456,6 +483,7 @@
           <dt><span class="lv">★☆☆</span></dt><dd>やさしい（基本）。「むずかしさ」の「やさしめ」は ★ と ★★ の問題です。</dd>
           <dt><span class="lv">★★☆</span></dt><dd>ふつう</dd>
           <dt><span class="lv">★★★</span></dt><dd>むずかしい（東海中レベル）。「むずかしめ」は ★★ と ★★★ の問題です。</dd>
+          <dt>すべて選ぶ</dt><dd>正しいものを<b>全部</b>選んでから「答える」を押す問題。1 つでも多かったり足りなかったりすると不正解です。</dd>
           <dt>記述</dt><dd>答えを書く問題。<b>ひらがなで書けば OK</b> です（漢字でも正解になります）。</dd>
           <dt>わからない</dt><dd>答えがわからないときに押すと、正解と解説が出ます。その問題はあとでまた出てきます。</dd>
         </dl>
@@ -470,6 +498,13 @@
         <p class="small" style="margin:0">正直につけるほど、効率よく覚えられます。</p>
       </div>
       <div class="card">
+        <h2 style="margin-top:0">むずかしさのモード</h2>
+        <div class="seg" role="group" aria-label="むずかしさのモード">
+          ${Object.entries(MODES).map(([k, v]) => `<button type="button" data-setmode="${k}" aria-pressed="${k === mode()}">${k === 'tokai' ? '🏯' : '🌱'} ${v.name}</button>`).join('')}
+        </div>
+        <p class="small" id="modeNote" style="margin:8px 0 0">${MODES[mode()].note}。復習の問題は、モードに関係なく出ます。</p>
+      </div>
+      <div class="card">
         <h2 style="margin-top:0">1 日の目標</h2>
         <div class="seg" role="group" aria-label="1 日の目標">
           ${[10, 20, 30, 50].map((n) => `<button type="button" data-goal="${n}" aria-pressed="${n === goal()}">${n} 問</button>`).join('')}
@@ -481,6 +516,11 @@
     onAll('[data-goal]', 'click', (e) => {
       store.goal = +e.currentTarget.dataset.goal; save();
       $app.querySelectorAll('[data-goal]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.goal === store.goal)));
+    });
+    onAll('[data-setmode]', 'click', (e) => {
+      store.mode = e.currentTarget.dataset.setmode; save();
+      $app.querySelectorAll('[data-setmode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.setmode === store.mode)));
+      $app.querySelector('#modeNote').textContent = `${MODES[mode()].note}。復習の問題は、モードに関係なく出ます。`;
     });
     on('#again', 'click', () => guide(0));
     on('#back', 'click', home);
@@ -566,9 +606,14 @@
         </div>
         <div class="err" id="err"></div>
         <div class="hint">記述式：ひらがなで書けば OK です。</div>`
+      : q.type === 'multi'
+      ? `<div class="multi-note">✅ あてはまるものを<b>すべて</b>選んでから「答える」を押してください。</div>
+        <div class="choices">${q.choices.map((c, i) => `<button class="choice mchoice" type="button" data-i="${i}" aria-pressed="false"><span class="no">${i + 1}</span><span>${rich(c)}</span></button>`).join('')}</div>
+        <div class="err" id="err"></div>
+        <button class="btn wide" id="submitMulti" type="button">答える</button>`
       : `<div class="choices">${q.choices.map((c, i) => `<button class="choice" type="button" data-i="${i}"><span class="no">${i + 1}</span><span>${rich(c)}</span></button>`).join('')}</div>`;
     h(`
-      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${esc(cat ? cat.name : s.name)}</span> <span class="lv" title="難易度">${stars(q.lv || 1)}</span>${q.type === 'text' ? ' <span class="small">記述</span>' : ''}${card ? (card.lapses ? ` <span class="small">・前にまちがえた</span>` : '') : ' <span class="small">・初めて</span>'}</span>
+      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${esc(cat ? cat.name : s.name)}</span> <span class="lv" title="難易度">${stars(q.lv || 1)}</span>${q.type === 'text' ? ' <span class="small">記述</span>' : q.type === 'multi' ? ' <span class="small">すべて選ぶ</span>' : ''}${card ? (card.lapses ? ` <span class="small">・前にまちがえた</span>` : '') : ' <span class="small">・初めて</span>'}</span>
         <span>${session.idx + 1} / ${total}　⏱ <span id="clock">${elapsed()}</span></span></div>
       <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
       <div class="card">
@@ -603,7 +648,8 @@
           ${q.exp ? `<div class="exp-title">解説</div><div class="exp">${rich(q.exp)}</div>` : ''}
           <div class="small" style="margin-top:8px">${nextTxt}</div>
         </div>`;
-      $app.querySelectorAll('#input button, #input input').forEach((el) => { el.disabled = true; });
+      $app.querySelectorAll('#input button:not(.mchoice), #input input').forEach((el) => { el.disabled = true; });
+      $app.querySelectorAll('#input .mchoice').forEach((el) => { el.disabled = true; });
       nb.focus();
     };
     const next = () => {
@@ -629,6 +675,28 @@
         if (answered) { if (e.key === 'Enter') { e.preventDefault(); next(); } return; }
         const b = $app.querySelector(`.choice[data-i="${+e.key - 1}"]`);
         if (b) b.click();
+      });
+    } else if (q.type === 'multi') {
+      const err = $app.querySelector('#err');
+      const btns = [...$app.querySelectorAll('.mchoice')];
+      const toggle = (b) => { if (!answered) { b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); err.textContent = ''; } };
+      btns.forEach((b) => b.addEventListener('click', () => toggle(b)));
+      const submit = () => {
+        if (answered) return;
+        const picked = btns.filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => q.choices[+b.dataset.i]);
+        if (!picked.length) { err.textContent = '1 つ以上選んでください。'; return; }
+        const ok = picked.length === q.correct.length && picked.every((x) => q.correct.includes(x));
+        btns.forEach((b) => {
+          const c = q.choices[+b.dataset.i], sel = b.getAttribute('aria-pressed') === 'true';
+          if (q.correct.includes(c)) b.classList.add('ok'); else if (sel) b.classList.add('ng');
+        });
+        finish(ok, picked.join('／'));
+      };
+      on('#submitMulti', 'click', submit);
+      setKeys((e) => {
+        if (e.key === 'Enter') { e.preventDefault(); if (answered) next(); else submit(); return; }
+        const b = btns[+e.key - 1];
+        if (b) toggle(b);
       });
     } else {
       const input = $app.querySelector('#ans');
@@ -701,7 +769,7 @@
   }
 
   /* ───────── 暗記カード ───────── */
-  const asRecall = (s) => s.replace(/として正しいものはどれですか。/, 'は？').replace(/はどれですか。/, 'は？');
+  const asRecall = (s) => s.replace(/として正しいものはどれですか。/, 'は？').replace(/はどれですか。/, 'は？').replace(/をすべて選びなさい。/, 'をすべて答えよう（いくつある？）');
 
   function flashStart(cards, title) {
     if (!cards.length) { alert('カードがありません。'); return; }
@@ -722,7 +790,7 @@
       <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
       <div class="card flash">
         <div class="small">問題</div>
-        <div class="qtext">${rich(q.type === 'choice' ? asRecall(q.q) : q.q)}</div>
+        <div class="qtext">${rich(q.type === 'text' ? q.q : asRecall(q.q))}</div>
         <div id="back" hidden>
           <hr>
           <div class="small">答え</div>

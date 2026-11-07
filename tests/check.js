@@ -1,7 +1,7 @@
 // 問題データのチェック: node tests/check.js
 const path = require('path');
 const load = (f) => require(path.join(__dirname, '..', 'js', f));
-load('util.js'); load('data/kokugo.js'); load('data/kokugo2.js');
+load('util.js'); load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js');
 const { KOKUGO } = globalThis;
 let fail = 0;
 const bad = (msg, q) => { fail++; if (fail < 40) console.error('NG:', msg, JSON.stringify(q).slice(0, 160)); };
@@ -33,18 +33,22 @@ for (const b of KOKUGO.bank) {
   if (![1, 2, 3].includes(b.lv)) bad('level', b);
   if (b.a) {
     if (!Array.isArray(b.a) || !b.a.length || b.c) bad('text answer', b);
+  } else if (b.ok) {
+    if (!b.c || b.c.length < 4 || new Set(b.c).size !== b.c.length) bad('multi choices', b);
+    if (!b.ok.length || !b.ok.every((x) => b.c.includes(x)) || b.ok.length === b.c.length) bad('multi answers', b);
   } else {
     if (!b.c || b.c.length !== 4) bad('choice count', b);
     else if (new Set(b.c).size !== 4) bad('duplicate choices', b);
   }
   if (!KOKUGO.cats.some((c) => c.id === b.cat)) bad('unknown cat', b);
-  const key = b.q + '|' + (b.a ? b.a[0] : b.c[0]);
+  const key = b.q + '|' + (b.a ? b.a[0] : b.ok ? b.ok.join('／') : b.c[0]);
   if (seen.has(key)) bad('duplicate question', b);
   seen.add(key);
 }
 const lv = [1, 2, 3].map((l) => KOKUGO.bank.filter((b) => b.lv === l).length);
 const text = KOKUGO.bank.filter((b) => b.a).length;
+const multi = KOKUGO.bank.filter((b) => b.ok).length;
 const counts = KOKUGO.cats.map((c) => `${c.name} ${c.gens ? `自動(${KOKUGO.ANTONYMS.length + KOKUGO.SYNONYMS.length}組)` : KOKUGO.bank.filter((b) => b.cat === c.id).length}`);
 console.log(fail ? `${fail} failures` : 'all ok',
-  `| 合計 ${KOKUGO.bank.length} 問（★${lv[0]} ★★${lv[1]} ★★★${lv[2]}・記述 ${text}）\n${counts.join(' / ')}`);
+  `| 合計 ${KOKUGO.bank.length} 問（★${lv[0]} ★★${lv[1]} ★★★${lv[2]}・記述 ${text}・すべて選ぶ ${multi}）\n${counts.join(' / ')}`);
 process.exit(fail ? 1 : 0);
