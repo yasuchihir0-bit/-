@@ -1,7 +1,7 @@
 // 問題データのチェック: node tests/check.js
 const path = require('path');
 const load = (f) => require(path.join(__dirname, '..', 'js', f));
-load('util.js'); load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js');
+load('util.js'); load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js');
 const { KOKUGO } = globalThis;
 let fail = 0;
 const bad = (msg, q) => { fail++; if (fail < 40) console.error('NG:', msg, JSON.stringify(q).slice(0, 160)); };
