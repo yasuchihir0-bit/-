@@ -1,0 +1,10 @@
+{
+  "name": "東海中 受験トレーニング",
+  "short_name": "東海中トレ",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#1f6feb",
+  "lang": "ja",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
