@@ -287,11 +287,50 @@
   let onResize = null;
   let rz;
   window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => onResize && onResize(), 150); });
-  const leaveOk = () => !(session && !session.done && session.idx > 0 && !confirm('とちゅうでやめますか？（答えた問題の記録は残ります）'));
-  document.getElementById('homeBtn').addEventListener('click', () => { if (leaveOk()) home(); });
+  /* 画面の中に出す確認・お知らせ（confirm / alert が使えない環境でも動くように）
+     ask(本文, { ok, cancel, html }) → Promise<boolean>。cancel を null にするとボタンは 1 つ */
+  function ask(text, opt = {}) {
+    return new Promise((resolve) => {
+      Charts.hideTip();
+      const prev = document.activeElement;
+      const el = document.createElement('div');
+      el.className = 'modal';
+      const cancel = opt.cancel === undefined ? 'やめる' : opt.cancel;
+      el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="確認">
+        <p class="ask-text">${opt.html ? text : esc(text)}</p>
+        <div class="row" style="justify-content:flex-end;margin-top:16px">
+          ${cancel ? `<button class="btn ghost" data-a="0" type="button">${esc(cancel)}</button>` : ''}
+          <button class="btn" data-a="1" type="button">${esc(opt.ok || 'OK')}</button>
+        </div></div>`;
+      const done = (v) => {
+        el.remove();
+        document.removeEventListener('keydown', key, true);
+        if (prev && prev.focus) prev.focus();
+        resolve(v);
+      };
+      const key = (e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); done(false); }
+        else if (e.key === 'Enter' && !e.isComposing && !(e.target && e.target.tagName === 'TEXTAREA')) { e.preventDefault(); e.stopPropagation(); done(true); }
+        else e.stopPropagation();
+      };
+      el.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => done(b.dataset.a === '1')));
+      el.addEventListener('click', (e) => { if (e.target === el) done(false); });
+      document.addEventListener('keydown', key, true);
+      document.body.appendChild(el);
+      if (opt.onOpen) opt.onOpen(el);
+      el.querySelector('[data-a="1"]').focus();
+    });
+  }
+  const notice = (text) => ask(text, { cancel: null });
+  /* 問題のとちゅうで別の画面に行くときは確かめる */
+  const leave = (fn) => {
+    if (!(session && !session.done && session.idx > 0)) { fn(); return; }
+    ask('とちゅうでやめますか？（答えた問題の記録は残ります）', { ok: 'やめる', cancel: '続ける' }).then((y) => { if (y) fn(); });
+  };
+  document.getElementById('homeBtn').addEventListener('click', () => leave(home));
   Charts.initTips();
-  document.getElementById('statsBtn').addEventListener('click', () => { if (leaveOk()) analysis(); });
-  document.getElementById('helpBtn').addEventListener('click', () => { if (leaveOk()) help(); });
+  document.getElementById('statsBtn').addEventListener('click', () => leave(analysis));
+  document.getElementById('helpBtn').addEventListener('click', () => leave(help));
 
   const reset = () => { session = null; setKeys(null); onResize = null; clearInterval(timerId); };
 
@@ -617,7 +656,7 @@
   let timerId = null;
 
   function start(questions, title) {
-    if (!questions.length) { alert('出題できる問題がありません。'); return; }
+    if (!questions.length) { notice('出題できる問題がありません。'); return; }
     reset();
     session = { title, questions, idx: 0, results: [], t0: Date.now(), done: false };
     store.sessions++; save();
@@ -807,7 +846,7 @@
   const asRecall = (s) => s.replace(/として正しいものはどれですか。/, 'は？').replace(/はどれですか。/, 'は？').replace(/をすべて選びなさい。/, 'をすべて答えよう（いくつある？）');
 
   function flashStart(cards, title) {
-    if (!cards.length) { alert('カードがありません。'); return; }
+    if (!cards.length) { notice('カードがありません。'); return; }
     reset();
     session = { title, questions: cards, idx: 0, results: [], t0: Date.now(), done: false, flash: true };
     flashShow();
@@ -975,7 +1014,8 @@
         <p class="small" style="margin-top:0">記録はこの端末だけに保存されています。別の端末に移すときや、念のためのバックアップに使ってください。</p>
         <div class="row">
           <button class="btn sub" id="export" type="button">記録を書き出す</button>
-          <label class="btn sub" style="display:inline-flex;align-items:center">記録を読みこむ<input id="import" type="file" accept="application/json,.json" hidden></label>
+          <label class="btn sub" style="display:inline-flex;align-items:center">ファイルから読みこむ<input id="import" type="file" accept="application/json,.json" hidden></label>
+          <button class="btn sub" id="paste" type="button">貼りつけて読みこむ</button>
           <button class="btn ghost" id="reset" type="button">記録をすべて消す</button>
         </div>
       </div>
@@ -1008,26 +1048,49 @@
     on('#weakGo', 'click', () => start(weakCards.map(([k, c]) => fromCard(k, c)).filter(Boolean), 'よくまちがえる問題'));
     on('#back', 'click', home);
     on('#reset', 'click', () => {
-      if (!confirm('成績と復習の記録をすべて消します。よろしいですか？')) return;
-      store = blank(); save(); analysis();
+      ask('成績と復習の記録をすべて消します。よろしいですか？', { ok: '消す' }).then((y) => {
+        if (y) { store = blank(); save(); analysis(); }
+      });
     });
+    /* 書き出し：ファイルに保存できない環境もあるので、文字としてコピーもできるようにする */
     on('#export', 'click', () => {
-      const blob = new Blob([JSON.stringify(store)], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${APP.file}-${T}.json`;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      const json = JSON.stringify(store);
+      try {
+        const blob = new Blob([json], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${APP.file}-${T}.json`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      } catch (e) { /* 保存できなくても、下のコピーで移せる */ }
+      ask(`<b>記録の文字データ</b><br><span class="small">ファイルが保存されないときは、この文字を全部コピーして、メモなどに貼りつけて残してください。別の端末では「貼りつけて読みこむ」で読みこめます。</span>
+        <textarea id="dataOut" class="datatext" readonly rows="5" aria-label="記録の文字データ"></textarea>`,
+      { html: true, ok: 'コピーする', cancel: '閉じる', onOpen: (el) => { el.querySelector('#dataOut').value = json; } }).then((y) => {
+        if (!y) return;
+        const fallback = () => notice('コピーできませんでした。文字を長押し（または Ctrl+A）で選んでコピーしてください。');
+        try { navigator.clipboard.writeText(json).then(() => notice('コピーしました。'), fallback); } catch (e) { fallback(); }
+      });
     });
+    const importText = (txt) => {
+      let data;
+      try { data = JSON.parse(txt); } catch (e) { data = null; }
+      if (!data || typeof data !== 'object' || !data.stats || !data.cards) { notice('この記録は読みこめませんでした。書き出した文字やファイルをそのまま使ってください。'); return; }
+      ask('今の記録を、読みこんだ記録で置きかえます。よろしいですか？', { ok: '置きかえる' }).then((y) => {
+        if (y) { store = sanitize(data); store.seenGuide = true; save(); analysis(); }
+      });
+    };
     on('#import', 'change', (e) => {
       const f = e.target.files[0];
       if (!f) return;
-      f.text().then((txt) => {
-        const data = JSON.parse(txt);
-        if (!data || typeof data !== 'object' || !data.stats || !data.cards) throw new Error('format');
-        if (!confirm('今の記録を、読みこんだ記録で置きかえます。よろしいですか？')) return;
-        store = sanitize(data); store.seenGuide = true; save(); analysis();
-      }).catch(() => alert('このファイルは読みこめませんでした。'));
+      f.text().then(importText, () => notice('このファイルは読みこめませんでした。'));
+    });
+    on('#paste', 'click', () => {
+      let box;
+      ask(`<b>記録を貼りつけて読みこむ</b><br><span class="small">「記録を書き出す」でコピーした文字を、ここに貼りつけてください。</span>
+        <textarea id="dataIn" class="datatext" rows="5" aria-label="貼りつける記録"></textarea>`,
+      { html: true, ok: '読みこむ', onOpen: (el) => { box = el.querySelector('#dataIn'); setTimeout(() => box.focus(), 0); } }).then((y) => {
+        if (y) importText(box.value.trim());
+      });
     });
   }
 
