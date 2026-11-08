@@ -159,5 +159,21 @@
     return L.map(fold).join('\r\n') + '\r\n';
   }
 
-  g.SCHED = { TYPES, TYPE, WD, pad, parseDate, ymd, daysUntil, fmtDate, countdown, eventKey, buildEvents, upcoming, urgency, findConflicts, dueReminders, toICS };
+  // Google カレンダーの「予定を追加」画面を開く URL（アプリ内で .ics を保存できない環境用）
+  function gcalUrl(e, label) {
+    const d = e.date.replace(/-/g, '');
+    let dates;
+    if (e.time) {
+      const [h, m] = e.time.split(':').map(Number);
+      const end = `${pad((h + 1) % 24)}${pad(m)}00`;
+      dates = `${d}T${pad(h)}${pad(m)}00/${d}T${end}`;
+    } else {
+      const next = new Date(parseDate(e.date).getTime() + 86400000 + 3600000);
+      dates = `${d}/${ymd(next).replace(/-/g, '')}`;
+    }
+    const q = new URLSearchParams({ action: 'TEMPLATE', text: label, dates, ctz: 'Asia/Tokyo', details: e.note || '' });
+    return 'https://calendar.google.com/calendar/render?' + q.toString();
+  }
+
+  g.SCHED = { gcalUrl, TYPES, TYPE, WD, pad, parseDate, ymd, daysUntil, fmtDate, countdown, eventKey, buildEvents, upcoming, urgency, findConflicts, dueReminders, toICS };
 })(globalThis);

@@ -14,6 +14,26 @@
   let st = load();
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ ...st, editing: null })); } catch { /* 保存できない環境 */ } };
   const today = () => new Date();
+  // claude.ai の Artifact として開いているとき（.ics の保存や confirm() が使えない）
+  const inArtifact = () => !!(window.claude && typeof window.claude.use === 'function');
+  const gcal = (e) => `<a class="gcal" href="${esc(S.gcalUrl(e, `${S.TYPE[e.type].icon}${e.school} ${S.TYPE[e.type].label}`))}" target="_blank" rel="noopener">📅 Googleカレンダーに追加</a>`;
+
+  // 確認のダイアログ（confirm() が使えない環境でも動くよう、画面の中に出す）
+  function ask(msg, okLabel = 'はい') {
+    return new Promise((resolve) => {
+      const box = document.createElement('div');
+      box.className = 'ask';
+      box.innerHTML = `<div class="ask-card" role="alertdialog" aria-modal="true"><p></p><div class="row end"><button type="button" class="btn ghost" data-no>やめる</button><button type="button" class="btn primary" data-yes></button></div></div>`;
+      box.querySelector('p').textContent = msg;
+      box.querySelector('[data-yes]').textContent = okLabel;
+      const done = (v) => { box.remove(); resolve(v); };
+      box.querySelector('[data-yes]').onclick = () => done(true);
+      box.querySelector('[data-no]').onclick = () => done(false);
+      box.onclick = (ev) => { if (ev.target === box) done(false); };
+      document.body.appendChild(box);
+      box.querySelector('[data-no]').focus();
+    });
+  }
 
   // ---- 画面切りかえ ----
   function go(view) { st.view = view; save(); render(); window.scrollTo(0, 0); }
@@ -51,6 +71,7 @@
           <div class="ev-top">${chip(e.type)}<span class="cd">${S.countdown(e.days)}</span></div>
           <div class="ev-title">${esc(e.school)}</div>
           <div class="ev-date">${e.third ? '<span class="badge ng">⚠️ 未確認</span> ' : ''}${S.fmtDate(e.date, e.time)}${e.note ? ' ・ ' + esc(e.note) : ''}</div>
+          ${inArtifact() ? `<div class="small">${gcal(e)}</div>` : ''}
         </div></li>`;
     const group = (title, arr, cls = '') => (arr.length ? `<h2 class="${cls}">${title}<small>${arr.length}件</small></h2><ul class="evs">${arr.map(row).join('')}</ul>` : '');
     return `
@@ -71,6 +92,7 @@
   }
 
   function icsBanner() {
+    if (inArtifact()) return '';
     const k = icsState();
     if (k === 'ok') return '';
     const msg = k === 'none'
@@ -229,6 +251,14 @@
     const offs = st.settings.offsets;
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
     const ics = icsState();
+    const evs = S.buildEvents(st.schools).filter((e) => S.daysUntil(e.date, today()) >= 0);
+    const artifactCard = `<section class="card warn">
+      <h2>📱 スマホに通知を届ける</h2>
+      <p class="small">このページを<b>閉じていても</b>通知が届くように、予定を Google カレンダーに1件ずつ入れます。リンクを押すと Google カレンダーの追加画面が開くので、「通知」を「1日前」などにして保存してください。</p>
+      ${evs.length ? `<ul class="plain gcal-list">${evs.map((e) => `<li>${chip(e.type)} <b>${esc(e.school)}</b><div class="muted small">${S.fmtDate(e.date, e.time)}</div>${gcal(e)}</li>`).join('')}</ul>` : '<p class="muted small">これからの予定はまだありません。志望校を追加してください。</p>'}
+      <p class="muted small">すべての予定を通知つきでまとめて入れるファイル（.ics）は、このページからは保存できません。GitHub Pages などで公開したアプリ（calendar/index.html）の設定画面から書き出せます。</p>
+    </section>`;
+    if (inArtifact()) return artifactCard + settingsRest(offs, perm);
     return `<section class="card ${ics === 'ok' ? '' : 'warn'}">
       <h2>📱 スマホに通知を届ける（おすすめ）</h2>
       <p class="small">このアプリを<b>閉じていても</b>通知が届くように、すべての予定と下の「お知らせのタイミング」を、スマホのカレンダーに入れます。通知はカレンダーアプリが出します。</p>
@@ -243,11 +273,14 @@
         <li>うまくいかないときは、パソコンで Google カレンダー →「設定」→「インポート / エクスポート」からファイルを読みこむ</li>
         <li>Google カレンダーは、読みこんだ予定に自分の「通知の初期設定」を使うことがあります。予定を開いて通知の時刻を確かめてください</li></ol></details>
       <p class="muted small">同じ予定を読みこみ直すと上書きされます（iPhone は重なることがあるので、そのときは古い予定を消してください）。</p>
-    </section>
-    <section class="card">
+    </section>` + settingsRest(offs, perm);
+  }
+
+  function settingsRest(offs, perm) {
+    return `<section class="card">
       <h2>🔔 お知らせのタイミング</h2>
       <div class="opts">${[14, 7, 3, 2, 1, 0].map((n) => `<label class="opt"><input type="checkbox" data-off="${n}" ${offs.includes(n) ? 'checked' : ''}> ${n === 0 ? '当日' : n + '日前'}</label>`).join('')}</div>
-      <p class="muted small">スマホのカレンダーの通知と、このアプリを開いたときのお知らせの両方に使います。</p>
+      <p class="muted small">${inArtifact() ? 'このページを開いたときに、この日にあたる予定をお知らせします。' : 'スマホのカレンダーの通知と、このアプリを開いたときのお知らせの両方に使います。'}</p>
       ${perm === 'unsupported' ? '<p class="muted small">このブラウザは、アプリからの通知に対応していません。</p>'
         : perm === 'granted' ? '<p class="small">✅ アプリを開いたときに、ブラウザの通知でもお知らせします。</p>'
         : perm === 'denied' ? '<p class="muted small">ブラウザの通知はブロックされています（ブラウザの設定から許可できます）。</p>'
@@ -289,18 +322,18 @@
       st.filter.q = el.value.trim(); save();
       clearTimeout(bind.qt); bind.qt = setTimeout(() => { render(); const q = document.querySelector('[data-q]'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 300);
     }, 'input');
-    on('[data-sync]', (el) => {
+    on('[data-sync]', async (el) => {
       const sc = st.schools.find((x) => x.id === el.dataset.sync);
       const p = presetOf(sc);
-      if (sc.edited && !confirm(`${sc.name} の日程を、リストの日程にもどしますか？（自分で直した内容は消えます）`)) return;
+      if (sc.edited && !(await ask(`${sc.name} の日程を、リストの日程にもどしますか？（自分で直した内容は消えます）`, 'もどす'))) return;
       sc.events = clone(p.events); sc.name = presetLabel(p); sc.area = `${p.pref}・${p.city}（${p.gender}）`; delete sc.edited;
       save(); render(); toast(`${sc.name} の日程を更新しました`);
     });
     on('[data-edit]', (el) => { st.editing = clone(st.schools.find((s) => s.id === el.dataset.edit)); render(); });
     on('[data-cancel]', () => { st.editing = null; render(); });
-    on('[data-del]', (el) => {
+    on('[data-del]', async (el) => {
       const s = st.schools.find((x) => x.id === el.dataset.del);
-      if (!confirm(`${s.name} を削除しますか？`)) return;
+      if (!(await ask(`${s.name} を削除しますか？`, '削除する'))) return;
       st.schools = st.schools.filter((x) => x !== s); save(); render();
     });
     on('#editForm', (form, e) => {
@@ -338,10 +371,18 @@
         st = { ...defaults(), ...d, view: 'schools' }; save(); render(); toast('読みこみました');
       }).catch(() => toast('読みこめませんでした'));
     }, 'change');
-    on('[data-reset]', () => { if (confirm('すべてのデータを消しますか？')) { st = defaults(); save(); render(); } });
+    on('[data-reset]', async () => { if (await ask('すべてのデータを消しますか？', 'すべて消す')) { st = defaults(); save(); render(); } });
   }
 
-  function download(name, text, type) {
+  async function download(name, text, type) {
+    if (inArtifact()) {
+      const dl = await window.claude.use('downloads');
+      if (!dl) { toast('このページからはファイルを保存できません'); return; }
+      try { await dl.save({ filename: name, data: text }); toast('保存しました'); } catch (err) {
+        toast(err && err.code === 'declined' ? '保存をやめました' : 'ファイルを保存できませんでした');
+      }
+      return;
+    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type }));
     a.download = name; a.click();
