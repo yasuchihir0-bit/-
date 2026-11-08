@@ -4,7 +4,8 @@ const load = (f) => require(path.join(__dirname, '..', 'js', f));
 load('util.js');
 load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/filter.js');
 load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js");
-const { KOKUGO, SHAKAI } = globalThis;
+["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2"].forEach((f) => load(`data/${f}.js`));
+const { KOKUGO, SHAKAI, RIKA } = globalThis;
 let fail = 0;
 const bad = (msg, q) => { fail++; if (fail < 40) console.error('NG:', msg, JSON.stringify(q).slice(0, 160)); };
 
@@ -75,5 +76,6 @@ function checkSubject(S) {
 
 checkSubject(KOKUGO);
 checkSubject(SHAKAI);
+checkSubject(RIKA);
 console.log(fail ? `${fail} failures` : 'all ok');
 process.exit(fail ? 1 : 0);

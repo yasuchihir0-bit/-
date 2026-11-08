@@ -248,6 +248,6 @@
     bank,
     ANTONYMS,
     SYNONYMS,
-    app: { links: [{ href: 'shakai.html', label: '🗾 社会トレーニング' }] },
+    app: { links: [{ href: 'shakai.html', label: '🗾 社会トレーニング' }, { href: 'rika.html', label: '🔬 理科トレーニング' }] },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

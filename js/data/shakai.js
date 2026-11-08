@@ -231,7 +231,7 @@
       topFocus: ['tokai', 'chiho', 'kindai', 'gendai', 'nendai', 'jiji'],
       textHint: '記述式：漢字でもひらがなでも OK です（「〜時代」「〜の戦い」などは問題の指示どおりに）。',
       contentNote: '問題文・解説はこのアプリのために作ったものです。まちがいがないよう注意していますが、生産量の順位や人口などの統計は年によって変わります。最新の数字は、学校・塾の教材や統計資料（『日本国勢図会』など）でも確かめてください。',
-      links: [{ href: 'index.html', label: '📖 国語トレーニング' }],
+      links: [{ href: 'index.html', label: '📖 国語トレーニング' }, { href: 'rika.html', label: '🔬 理科トレーニング' }],
     },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

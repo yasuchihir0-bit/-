@@ -1,0 +1,10 @@
+{
+  "name": "東海中 理科トレーニング",
+  "short_name": "東海中理科",
+  "start_url": "./rika.html",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#138a72",
+  "lang": "ja",
+  "icons": [{ "src": "icon-rika.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
