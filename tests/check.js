@@ -3,7 +3,7 @@ const path = require('path');
 const load = (f) => require(path.join(__dirname, '..', 'js', f));
 load('util.js');
 load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/filter.js');
-load('data/shakai.js'); load('data/shakai2.js'); load('data/shakai3.js');
+load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js");
 const { KOKUGO, SHAKAI } = globalThis;
 let fail = 0;
 const bad = (msg, q) => { fail++; if (fail < 40) console.error('NG:', msg, JSON.stringify(q).slice(0, 160)); };
