@@ -4,7 +4,7 @@ const load = (f) => require(path.join(__dirname, '..', 'js', f));
 load('util.js');
 load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/filter.js');
 load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js"); load("data/shakai8.js");
-["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2"].forEach((f) => load(`data/${f}.js`));
+["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2", "rika-moshi"].forEach((f) => load(`data/${f}.js`));
 const { KOKUGO, SHAKAI, RIKA } = globalThis;
 let fail = 0;
 const bad = (msg, q) => { fail++; if (fail < 40) console.error('NG:', msg, JSON.stringify(q).slice(0, 160)); };
@@ -49,7 +49,9 @@ function checkSubject(S) {
   for (const b of S.bank) {
     if (![2, 3].includes(b.lv)) bad(`${S.id}: level (★ は出題しない)`, b);
     if (!b.q || typeof b.exp !== 'string') bad(`${S.id}: question/exp`, b);
-    if (b.a) {
+    if (b.n !== undefined) {
+      if (typeof b.n !== 'number' || !Number.isFinite(b.n) || b.c || b.a) bad('num answer', b);
+    } else if (b.a) {
       if (!Array.isArray(b.a) || !b.a.length || b.c || b.a.some((x) => !String(x).trim())) bad('text answer', b);
     } else if (b.ok) {
       if (!b.c || b.c.length < 4 || new Set(b.c).size !== b.c.length) bad('multi choices', b);
@@ -60,7 +62,7 @@ function checkSubject(S) {
       else if (new Set(b.c).size !== 4) bad('duplicate choices', b);
     }
     if (!S.cats.some((c) => c.id === b.cat)) bad('unknown cat', b);
-    const key = b.q + '|' + (b.a ? b.a[0] : b.ok ? b.ok.join('／') : b.c[0]);
+    const key = b.q + '|' + (b.n !== undefined ? b.n : b.a ? b.a[0] : b.ok ? b.ok.join('／') : b.c[0]);
     if (seen.has(key)) bad('duplicate question', b);
     seen.add(key);
   }
@@ -70,8 +72,9 @@ function checkSubject(S) {
   const lv = [2, 3].map((l) => S.bank.filter((b) => b.lv === l).length);
   const text = S.bank.filter((b) => b.a).length;
   const multi = S.bank.filter((b) => b.ok).length;
+  const nums = S.bank.filter((b) => b.n !== undefined).length;
   const counts = S.cats.map((c) => `${c.name} ${c.gens ? `自動(${c.size ? c.size() : KOKUGO.ANTONYMS.length + KOKUGO.SYNONYMS.length}組)` : S.bank.filter((b) => b.cat === c.id).length}`);
-  console.log(`【${S.name}】合計 ${S.bank.length} 問（★★${lv[0]} ★★★${lv[1]}・記述 ${text}・すべて選ぶ ${multi}）\n${counts.join(' / ')}`);
+  console.log(`【${S.name}】合計 ${S.bank.length} 問（★★${lv[0]} ★★★${lv[1]}・記述 ${text}・すべて選ぶ ${multi}${nums ? `・計算 ${nums}` : ''}）\n${counts.join(' / ')}`);
 }
 
 checkSubject(KOKUGO);

@@ -2,7 +2,7 @@
  * 教科のデータは window.SUBJECT（なければ window.KOKUGO）。教科ごとのちがいは SUBJECT.app で設定する。 */
 (function () {
   'use strict';
-  const { pick, shuffle, esc, rich } = window.U;
+  const { pick, shuffle, esc, rich, parseAnswer, req, fromDecimal } = window.U;
   const Charts = window.Charts;
 
   const SUBJECTS = [window.SUBJECT || window.KOKUGO];
@@ -32,7 +32,9 @@
   /* ───────── 問題の見分け（キー） ───────── */
   const qkey = (q) => `${q.subject}|${q.q}|${q.ans}`;
   const lvOf = (x) => x.lv || 1;
-  const ansOf = (item) => (item.a ? item.a[0] : item.ok ? item.ok.join('／') : item.c[0]);
+  /* 計算問題（数値で答える）：n が正解の数、unit が単位 */
+  const isNum = (item) => item.n !== undefined;
+  const ansOf = (item) => (isNum(item) ? `${item.n}${item.unit || ''}` : item.a ? item.a[0] : item.ok ? item.ok.join('／') : item.c[0]);
   const bkey = (sid, item) => `${sid}|${item.q}|${ansOf(item)}`;
   const BANK = new Map();
   SUBJECTS.forEach((s) => (s.bank || []).forEach((item, idx) => {
@@ -116,6 +118,7 @@
     if (q.choices) o.choices = q.choices.slice();
     if (q.accept) o.accept = q.accept.slice();
     if (q.correct) o.correct = q.correct.slice();
+    if (q.val) { o.val = { n: q.val.n, d: q.val.d }; o.unit = q.unit || ''; }
     return o;
   }
 
@@ -162,6 +165,7 @@
 
   function fromBank(subject, item, idx) {
     const base = { subject: subject.id, cat: item.cat, id: `${subject.id}-${idx}`, q: item.q, exp: item.exp, lv: lvOf(item) };
+    if (isNum(item)) return Object.assign(base, { type: 'num', val: fromDecimal(String(item.n)), unit: item.unit || '', ans: ansOf(item) });
     if (item.a) return Object.assign(base, { type: 'text', ans: item.a[0], accept: item.a });
     if (item.ok) return Object.assign(base, { type: 'multi', choices: shuffle(item.c), correct: item.ok.slice(), ans: ansOf(item) });
     return Object.assign(base, { type: 'choice', choices: shuffle(item.c), ans: item.c[0] });
@@ -188,6 +192,8 @@
     .replace(/[\s　。、「」『』（）()・]/g, '')
     .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
   const textOk = (q, v) => q.accept.some((a) => normText(a) === normText(v));
+  /* 計算問題の答え合わせ：単位はつけてもつけなくてもよい。0.5 と 1/2 のような書き方のちがいも同じとみなす */
+  const numOk = (q, v) => { const r = parseAnswer(v); return !!r && req(r, q.val); };
 
   /* 難易度のしぼりこみ */
   const LEVELS = {
@@ -673,13 +679,14 @@
     const s = SUBJ[q.subject], cat = catOf(q.subject, q.cat);
     const total = session.questions.length;
     const card = store.cards[qkey(q)];
-    const body = q.type === 'text'
+    const body = q.type === 'text' || q.type === 'num'
       ? `<div class="answer-row">
-          <input id="ans" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="答え" placeholder="ここに書く">
+          <input id="ans" type="text" ${q.type === 'num' ? 'inputmode="decimal" ' : ''}autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="答え" placeholder="${q.type === 'num' ? '数字で答える' : 'ここに書く'}">
+          ${q.type === 'num' && q.unit ? `<span class="unit">${esc(q.unit)}</span>` : ''}
           <button class="btn" id="submitText" type="button">答える</button>
         </div>
         <div class="err" id="err"></div>
-        <div class="hint">${esc(APP.textHint)}</div>`
+        <div class="hint">${q.type === 'num' ? '計算：数字だけで OK（単位はいりません）。小数でも分数（1/2 など）でもかまいません。' : esc(APP.textHint)}</div>`
       : q.type === 'multi'
       ? `<div class="multi-note">✅ あてはまるものを<b>すべて</b>選んでから「答える」を押してください。</div>
         <div class="choices">${q.choices.map((c, i) => `<button class="choice mchoice" type="button" data-i="${i}" aria-pressed="false"><span class="no">${i + 1}</span><span>${rich(c)}</span></button>`).join('')}</div>
@@ -687,7 +694,7 @@
         <button class="btn wide" id="submitMulti" type="button">答える</button>`
       : `<div class="choices">${q.choices.map((c, i) => `<button class="choice" type="button" data-i="${i}"><span class="no">${i + 1}</span><span>${rich(c)}</span></button>`).join('')}</div>`;
     h(`
-      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${esc(cat ? cat.name : s.name)}</span> <span class="lv" title="難易度">${stars(q.lv || 1)}</span>${q.type === 'text' ? ' <span class="small">記述</span>' : q.type === 'multi' ? ' <span class="small">すべて選ぶ</span>' : ''}${card ? (card.lapses ? ` <span class="small">・前にまちがえた</span>` : '') : ' <span class="small">・初めて</span>'}</span>
+      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${esc(cat ? cat.name : s.name)}</span> <span class="lv" title="難易度">${stars(q.lv || 1)}</span>${q.type === 'text' ? ' <span class="small">記述</span>' : q.type === 'num' ? ' <span class="small">計算</span>' : q.type === 'multi' ? ' <span class="small">すべて選ぶ</span>' : ''}${card ? (card.lapses ? ` <span class="small">・前にまちがえた</span>` : '') : ' <span class="small">・初めて</span>'}</span>
         <span>${session.idx + 1} / ${total}　⏱ <span id="clock">${elapsed()}</span></span></div>
       <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
       <div class="card">
@@ -779,8 +786,9 @@
         if (answered) return;
         const v = input.value.trim();
         if (!v) { err.textContent = '答えを書いてください。'; return; }
+        if (q.type === 'num' && !parseAnswer(v)) { err.textContent = '数字で答えてください（例：12、0.5、1/3）。'; return; }
         err.textContent = '';
-        finish(textOk(q, v), v);
+        finish(q.type === 'num' ? numOk(q, v) : textOk(q, v), v);
       };
       on('#submitText', 'click', submit);
       setKeys((e) => {
@@ -864,7 +872,7 @@
       <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
       <div class="card flash">
         <div class="small">問題</div>
-        <div class="qtext">${rich(q.type === 'text' ? q.q : asRecall(q.q))}</div>
+        <div class="qtext">${rich(q.type === 'text' || q.type === 'num' ? q.q : asRecall(q.q))}</div>
         <div id="back" hidden>
           <hr>
           <div class="small">答え</div>
