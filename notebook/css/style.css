@@ -233,3 +233,8 @@ details summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
   background: #1c2333; color: #fff; padding: 10px 16px; border-radius: 10px; z-index: 20;
   max-width: calc(100vw - 32px); box-shadow: var(--shadow); font-size: .92rem;
 }
+
+/* 確認ダイアログ */
+.small-dialog { width: min(92vw, 420px); }
+.ask p { margin: 4px 0 12px; white-space: pre-wrap; }
+.btn.danger-fill { background: var(--ng); color: #fff; border-color: var(--ng); }

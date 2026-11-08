@@ -28,6 +28,8 @@ const S = {
 };
 
 const app = document.getElementById('app');
+// Claude のアーティファクトなど、ほかのページに埋めこまれて開いているか（その場合 AI 読み取りとファイルの書き出しは使えない）
+const EMBEDDED = (() => { try { return window.self !== window.top; } catch { return true; } })();
 let view = { name: 'home' };
 let importState = null;
 let session = null;
@@ -53,6 +55,35 @@ function toast(msg) {
   toast.t = setTimeout(() => { el.hidden = true; }, 2600);
 }
 
+// ブラウザの alert / confirm / prompt の代わり（埋めこみ表示ではそれらが使えないため）
+// 戻り値：OK なら true（input ありなら入力した文字列）、キャンセルなら null
+function ask(message, { ok = 'OK', cancel = 'キャンセル', input = null, danger = false } = {}) {
+  return new Promise((resolve) => {
+    const dlg = document.getElementById('askDialog');
+    dlg.innerHTML = `
+      <form method="dialog" class="ask">
+        <p>${esc(message)}</p>
+        ${input != null ? `<input id="askInput" value="${esc(input)}" autocomplete="off">` : ''}
+        <div class="row end">
+          ${cancel ? `<button type="button" class="btn" data-ask="cancel">${esc(cancel)}</button>` : ''}
+          <button class="btn ${danger ? 'danger-fill' : 'primary'}" value="ok">${esc(ok)}</button>
+        </div>
+      </form>`;
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; resolve(v); };
+    dlg.querySelector('form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = input != null ? dlg.querySelector('#askInput').value : true;
+      dlg.close();
+      finish(v);
+    });
+    dlg.querySelector('[data-ask=cancel]')?.addEventListener('click', () => { dlg.close(); finish(null); });
+    dlg.onclose = () => finish(cancel ? null : true);
+    dlg.showModal();
+    (dlg.querySelector('#askInput') || dlg.querySelector('[value=ok]')).focus();
+  });
+}
+
 function chip(subjectId) {
   const s = subjectOf(subjectId);
   return `<span class="chip" style="--c:${esc(s.color)}">${esc(s.name)}</span>`;
@@ -76,9 +107,9 @@ async function hydrateImages(root = app) {
   }
 }
 
-function go(name, params = {}) {
+async function go(name, params = {}) {
   if (view.name === 'import' && name !== 'import' && importState && importState.drafts.length && !importState.saved) {
-    if (!confirm('取りこみ中の内容は保存されていません。移動しますか？')) return;
+    if (!(await ask('取りこみ中の内容は保存されていません。移動しますか？', { ok: '移動する', danger: true }))) return;
     importState = null;
   }
   view = { name, ...params };
@@ -219,7 +250,7 @@ function renderImport() {
   }
 
   // step 3
-  const hasKey = !!getApiKey();
+  const hasKey = !!getApiKey() && !EMBEDDED;
   app.innerHTML = `${head}
     <section class="card">
       <h2>まちがえた問題を登録</h2>
@@ -228,7 +259,7 @@ function renderImport() {
         <button class="btn" data-act="impAddDraft">＋ 問題を追加</button>
         ${hasKey
           ? `<button class="btn accent" data-act="impAnalyze" ${st.busy || !st.answer.length ? 'disabled' : ''}>✨ AI でまちがいを読み取る</button>`
-          : `<span class="muted small">設定で API キーを入れると、AI でまちがえた問題を自動で読み取れます。</span>`}
+          : EMBEDDED ? '' : `<span class="muted small">設定で API キーを入れると、AI でまちがえた問題を自動で読み取れます。</span>`}
       </div>
       ${st.busy ? `<p class="busy">${esc(st.busy)}</p>` : ''}
       ${st.aiNotes ? `<p class="note">AI のメモ：${esc(st.aiNotes)}</p>` : ''}
@@ -385,7 +416,7 @@ async function saveImport() {
   } catch (err) {
     st.busy = '';
     render();
-    alert(`保存できませんでした：${err.message}`);
+    await ask(`保存できませんでした：${err.message}`, { cancel: null });
   }
 }
 
@@ -738,6 +769,7 @@ function renderSettings() {
       <p class="muted small">Claude（${esc(MODEL)}）が、採点済みの解答用紙から ×・減点の問題を見つけ、問題番号・答え・位置を下書きします。
       使うには Anthropic の API キーが必要です（<a href="https://console.anthropic.com/" target="_blank" rel="noopener">console.anthropic.com</a> で作成、利用料がかかります）。</p>
       <p class="note small">キーはこの端末のブラウザにだけ保存され、写真といっしょに Anthropic にだけ送られます。家族で共有する端末や、他の人が使うパソコンには入れないでください。</p>
+      ${EMBEDDED ? `<p class="note small">いまの表示（ほかのページに埋めこまれた表示）では、AI の読み取りは使えません。GitHub Pages などで直接開いたときに使えます。</p>` : ''}
       <label>API キー<input id="apiKey" type="password" autocomplete="off" value="${esc(key)}" placeholder="sk-ant-..."></label>
       <div class="row end">${key ? `<button class="btn small danger" data-act="clearKey">キーを消す</button>` : ''}<button class="btn primary small" data-act="saveKey">保存</button></div>
     </section>
@@ -745,8 +777,9 @@ function renderSettings() {
     <section class="card form">
       <h2>バックアップ</h2>
       <p class="muted small">記録と写真はこの端末のブラウザにだけ保存されています。機種変更のときや、ときどき書き出しておくと安心です。</p>
+      ${EMBEDDED ? `<p class="note small">いまの表示ではファイルを書き出せません。書き出すときは GitHub Pages などで直接開いてください（読みこみはできます）。</p>` : ''}
       <div class="row wrap">
-        <button class="btn" data-act="export">⬇ 書き出す</button>
+        ${EMBEDDED ? '' : `<button class="btn" data-act="export">⬇ 書き出す</button>`}
         <label class="btn">⬆ 読みこむ<input type="file" accept="application/json,.json" data-act-change="importBackup" hidden></label>
         <button class="btn danger" data-act="wipe">すべて削除</button>
       </div>
@@ -766,9 +799,9 @@ async function exportBackup() {
 
 async function importBackup(file) {
   let data;
-  try { data = JSON.parse(await file.text()); } catch { alert('ファイルを読めませんでした'); return; }
-  if (data.app !== 'tokinaoshi-note') { alert('解き直しノートのバックアップではありません'); return; }
-  if (!confirm(`問題 ${data.problems.length} 問を読みこみます。同じ問題は上書きされます。よろしいですか？`)) return;
+  try { data = JSON.parse(await file.text()); } catch { await ask('ファイルを読めませんでした', { cancel: null }); return; }
+  if (data.app !== 'tokinaoshi-note') { await ask('解き直しノートのバックアップではありません', { cancel: null }); return; }
+  if (!(await ask(`問題 ${data.problems.length} 問を読みこみます。同じ問題は上書きされます。`, { ok: '読みこむ' }))) return;
   for (const im of data.images || []) await db.put('images', { id: im.id, blob: await dataURLToBlob(im.data), type: 'image/jpeg' });
   await db.putMany('tests', data.tests || []);
   await db.putMany('problems', data.problems || []);
@@ -804,13 +837,13 @@ const actions = {
     render();
   },
   async graduate(el) {
-    if (!confirm('この問題を卒業させますか？（解き直しに出てこなくなります）')) return;
+    if (!(await ask('この問題を卒業させますか？（解き直しに出てこなくなります）', { ok: '卒業させる' }))) return;
     const p = S.problems.find((x) => x.id === el.dataset.id);
     await saveProblem({ ...p, srs: { ...p.srs, mastered: true, due: null } });
     render();
   },
   async deleteProblem(el) {
-    if (!confirm('この問題を削除しますか？')) return;
+    if (!(await ask('この問題を削除しますか？', { ok: '削除する', danger: true }))) return;
     const p = S.problems.find((x) => x.id === el.dataset.id);
     await db.delete('problems', p.id);
     await deleteImages([p.questionImg, p.answerImg]);
@@ -859,7 +892,7 @@ const actions = {
       toast(drafts.length ? `${drafts.length} 問見つかりました。切り抜きの位置と内容を確かめてください。` : 'まちがえた問題は見つかりませんでした');
     } catch (err) {
       st.busy = '';
-      alert(err.message);
+      await ask(err.message, { cancel: null });
     }
     render();
   },
@@ -868,7 +901,7 @@ const actions = {
     const editing = view.name === 'edit';
     const d = editing ? view.draft : importState.drafts[Number(el.dataset.draft)];
     const pages = editing ? view.pages[kind] : pagesForImport(kind);
-    if (!pages.length) { alert(kind === 'q' ? '問題用紙の写真がありません。' : '解答用紙の写真がありません。'); return; }
+    if (!pages.length) { await ask(kind === 'q' ? '問題用紙の写真がありません。' : '解答用紙の写真がありません。', { cancel: null }); return; }
     const res = await openCropper({ title: kind === 'q' ? '問題をかこむ' : '解答（採点のあと）をかこむ', pages, page: d[kind].page, box: d[kind].box });
     if (!res) return;
     d[kind].page = res.page;
@@ -879,8 +912,8 @@ const actions = {
   },
 
   // 設定
-  addSubject: () => {
-    const name = prompt('教科の名前');
+  async addSubject() {
+    const name = (await ask('教科の名前', { input: '', ok: '追加' }))?.trim();
     if (!name) return;
     S.subjects.push({ id: uid(), name, color: ['#5b6b8c', '#a33ea1', '#2d7d46', '#9c6b1e'][S.subjects.length % 4], units: [] });
     setSetting('subjects', S.subjects).then(render);
@@ -897,7 +930,7 @@ const actions = {
   },
   async saveIntervals() {
     const list = srs.parseIntervals(document.getElementById('intervals').value);
-    if (!list) { alert('1 以上の日数を、小さい順にカンマで区切って入れてください'); return; }
+    if (!list) { await ask('1 以上の日数を、小さい順にカンマで区切って入れてください', { cancel: null }); return; }
     S.intervals = list;
     await setSetting('intervals', list);
     toast('保存しました（次の解き直しから使われます）');
@@ -912,7 +945,7 @@ const actions = {
   clearKey: () => { setApiKey(''); render(); },
   export: exportBackup,
   async wipe() {
-    if (!confirm('すべての問題・写真・設定を削除します。元にもどせません。よろしいですか？')) return;
+    if (!(await ask('すべての問題・写真・設定を削除します。元にもどせません。', { ok: 'すべて削除', danger: true }))) return;
     for (const s of ['problems', 'tests', 'images', 'kv']) await db.clear(s);
     await load();
     go('home');
@@ -952,7 +985,7 @@ document.addEventListener('change', async (e) => {
   const el = e.target;
   if (el.dataset.actChange && changeActions[el.dataset.actChange]) { changeActions[el.dataset.actChange](el); return; }
   if (el.dataset.f === 'unit' && el.value === '__new') {
-    const name = prompt('新しい単元の名前')?.trim();
+    const name = (await ask('新しい単元の名前', { input: '', ok: '追加' }))?.trim();
     const d = draftFor(el);
     if (name) {
       d.unit = name;
