@@ -242,11 +242,36 @@
   let onResize = null;
   let rz;
   window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => onResize && onResize(), 150); });
-  const leaveOk = () => !(session && !session.done && session.idx > 0 && !confirm('とちゅうでやめますか？（答えた問題の記録は残ります）'));
-  document.getElementById('homeBtn').addEventListener('click', () => { if (leaveOk()) home(); });
+  /* 画面の中に出す確認・お知らせ（confirm/alert が使えない環境でも動くように） */
+  function dialog(msg, okLabel, cancelLabel) {
+    return new Promise((resolve) => {
+      Charts.hideTip();
+      const el = document.createElement('div');
+      el.className = 'modal';
+      el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><p>${esc(msg)}</p>
+        <div class="row" style="justify-content:${cancelLabel ? 'space-between' : 'center'};margin-top:16px">
+          ${cancelLabel ? `<button class="btn ghost" data-no type="button">${esc(cancelLabel)}</button>` : ''}
+          <button class="btn" data-yes type="button">${esc(okLabel)}</button></div></div>`;
+      const prevKeys = keyHandler;
+      keyHandler = (e) => { if (e.key === 'Escape') done(false); };
+      const done = (v) => { el.remove(); keyHandler = prevKeys; resolve(v); };
+      el.querySelector('[data-yes]').addEventListener('click', () => done(true));
+      const no = el.querySelector('[data-no]');
+      if (no) no.addEventListener('click', () => done(false));
+      document.body.appendChild(el);
+      el.querySelector('[data-yes]').focus();
+    });
+  }
+  const ask = (msg, okLabel = 'はい') => dialog(msg, okLabel, 'やめる');
+  const notice = (msg) => dialog(msg, 'OK');
+  const guard = (fn) => () => {
+    if (session && !session.done && session.idx > 0) ask('とちゅうでやめますか？（答えた問題の記録は残ります）', 'やめる').then((ok) => ok && fn());
+    else fn();
+  };
+  document.getElementById('homeBtn').addEventListener('click', guard(() => home()));
   Charts.initTips();
-  document.getElementById('statsBtn').addEventListener('click', () => { if (leaveOk()) analysis(); });
-  document.getElementById('helpBtn').addEventListener('click', () => { if (leaveOk()) help(); });
+  document.getElementById('statsBtn').addEventListener('click', guard(() => analysis()));
+  document.getElementById('helpBtn').addEventListener('click', guard(() => help()));
 
   const reset = () => { session = null; setKeys(null); onResize = null; clearInterval(timerId); };
 
@@ -563,7 +588,7 @@
   let timerId = null;
 
   function start(questions, title) {
-    if (!questions.length) { alert('出題できる問題がありません。'); return; }
+    if (!questions.length) { notice('出題できる問題がありません。'); return; }
     reset();
     session = { title, questions, idx: 0, results: [], t0: Date.now(), done: false };
     store.sessions++; save();
@@ -755,7 +780,7 @@
   const asRecall = (s) => s.replace(/として正しいものはどれですか。/, 'は？').replace(/はどれですか。/, 'は？').replace(/をすべて選びなさい。/, 'をすべて答えよう（いくつある？）');
 
   function flashStart(cards, title) {
-    if (!cards.length) { alert('カードがありません。'); return; }
+    if (!cards.length) { notice('カードがありません。'); return; }
     reset();
     session = { title, questions: cards, idx: 0, results: [], t0: Date.now(), done: false, flash: true };
     flashShow();
@@ -956,8 +981,7 @@
     on('#weakGo', 'click', () => start(weakCards.map(([k, c]) => fromCard(k, c)).filter(Boolean), 'よくまちがえる問題'));
     on('#back', 'click', home);
     on('#reset', 'click', () => {
-      if (!confirm('成績と復習の記録をすべて消します。よろしいですか？')) return;
-      store = blank(); save(); analysis();
+      ask('成績と復習の記録をすべて消します。よろしいですか？', '消す').then((ok) => { if (ok) { store = blank(); save(); analysis(); } });
     });
     on('#export', 'click', () => {
       const blob = new Blob([JSON.stringify(store)], { type: 'application/json' });
@@ -966,6 +990,8 @@
       a.download = `tokai-rika-kiroku-${T}.json`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      // ダウンロードできない画面（共有ページなど）のために、クリップボードにもコピーする
+      if (navigator.clipboard) navigator.clipboard.writeText(JSON.stringify(store)).then(() => notice('記録をファイルに書き出しました。ファイルが保存されない画面では、記録をクリップボードにコピーしたので、メモなどに貼りつけて保存してください。'), () => {});
     });
     on('#import', 'change', (e) => {
       const f = e.target.files[0];
@@ -973,9 +999,8 @@
       f.text().then((txt) => {
         const data = JSON.parse(txt);
         if (!data || typeof data !== 'object' || !data.stats || !data.cards) throw new Error('format');
-        if (!confirm('今の記録を、読みこんだ記録で置きかえます。よろしいですか？')) return;
-        store = Object.assign(blank(), data); save(); analysis();
-      }).catch(() => alert('このファイルは読みこめませんでした。'));
+        return ask('今の記録を、読みこんだ記録で置きかえます。よろしいですか？', '置きかえる').then((ok) => { if (ok) { store = Object.assign(blank(), data); save(); analysis(); } });
+      }).catch(() => notice('このファイルは読みこめませんでした。'));
     });
   }
 
