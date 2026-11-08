@@ -9,6 +9,7 @@
     { id: 'result', label: '合格発表', short: '発表', icon: '🌸', task: false },
     { id: 'proc', label: '入学手続き締切', short: '手続', icon: '📋', task: true },
     { id: 'pay', label: '納入期限', short: '納入', icon: '💴', task: true },
+    { id: 'brief', label: '入学説明会', short: '説明', icon: '🏫', task: false },
   ];
   const TYPE = Object.fromEntries(TYPES.map((t) => [t.id, t]));
   const WD = ['日', '月', '火', '水', '木', '金', '土'];

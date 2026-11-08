@@ -7,7 +7,7 @@ let fail = 0;
 const ok = (cond, msg) => { if (!cond) { fail++; console.error('NG:', msg); } };
 
 // プリセット：日付の形式と順番（出願 → 試験 → 発表 → 手続き）
-const order = ['apply_start', 'apply_end', 'docs', 'exam', 'result', 'proc', 'pay'];
+const order = ['apply_start', 'apply_end', 'docs', 'exam', 'result', 'proc', 'pay', 'brief'];
 for (const p of P) {
   ok(p.id && p.name && p.source, `preset fields ${p.id}`);
   for (const [t, e] of Object.entries(p.events)) {

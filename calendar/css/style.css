@@ -3,7 +3,7 @@
   --accent: #c2410c; --accent-ink: #fff;
   --red: #b91c1c; --red-bg: #fde8e8; --amber: #b45309; --amber-bg: #fef3c7; --yellow-bg: #fff8e1; --green: #15803d;
   --t-apply_start: #2563eb; --t-apply_end: #dc2626; --t-docs: #7c3aed; --t-exam: #0f766e;
-  --t-result: #db2777; --t-proc: #ea580c; --t-pay: #a16207;
+  --t-result: #db2777; --t-proc: #ea580c; --t-pay: #a16207; --t-brief: #475569;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -11,7 +11,7 @@
     --accent: #fb923c; --accent-ink: #1a1a1a;
     --red: #f87171; --red-bg: #3b1d1d; --amber: #fbbf24; --amber-bg: #3a2e12; --yellow-bg: #2e2a1a;
     --t-apply_start: #60a5fa; --t-apply_end: #f87171; --t-docs: #a78bfa; --t-exam: #2dd4bf;
-    --t-result: #f472b6; --t-proc: #fb923c; --t-pay: #facc15;
+    --t-result: #f472b6; --t-proc: #fb923c; --t-pay: #facc15; --t-brief: #94a3b8;
   }
 }
 :root[data-theme="dark"] {
@@ -19,7 +19,7 @@
   --accent: #fb923c; --accent-ink: #1a1a1a;
   --red: #f87171; --red-bg: #3b1d1d; --amber: #fbbf24; --amber-bg: #3a2e12; --yellow-bg: #2e2a1a;
   --t-apply_start: #60a5fa; --t-apply_end: #f87171; --t-docs: #a78bfa; --t-exam: #2dd4bf;
-  --t-result: #f472b6; --t-proc: #fb923c; --t-pay: #facc15;
+  --t-result: #f472b6; --t-proc: #fb923c; --t-pay: #facc15; --t-brief: #94a3b8;
 }
 * { box-sizing: border-box; }
 body {
@@ -54,7 +54,7 @@ h2.red { color: var(--red); }
 /* 種類の色 */
 .chip, .pill { --c: var(--muted); }
 .t-apply_start { --c: var(--t-apply_start); } .t-apply_end { --c: var(--t-apply_end); } .t-docs { --c: var(--t-docs); }
-.t-exam { --c: var(--t-exam); } .t-result { --c: var(--t-result); } .t-proc { --c: var(--t-proc); } .t-pay { --c: var(--t-pay); }
+.t-exam { --c: var(--t-exam); } .t-result { --c: var(--t-result); } .t-proc { --c: var(--t-proc); } .t-pay { --c: var(--t-pay); } .t-brief { --c: var(--t-brief); }
 .chip { display: inline-block; font-size: .8rem; font-weight: 700; color: var(--c); border: 1px solid var(--c); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
 .pill { display: inline-block; font-size: .7rem; line-height: 1.5; color: #fff; background: var(--c); border-radius: 4px; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill { color: #111; } }
@@ -141,3 +141,9 @@ h2.red { color: var(--red); }
 .howto { margin: 10px 0 0; font-size: .9rem; }
 .howto summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
 .howto ol { margin: 4px 0 0; padding-left: 1.3em; }
+.badge { display: inline-block; font-size: .75rem; font-weight: 700; border-radius: 6px; padding: 0 6px; margin: 2px 0; }
+.badge.ok { color: var(--green); border: 1px solid var(--green); }
+.badge.ng { color: var(--red); border: 1px solid var(--red); background: var(--red-bg); }
+.school-main a { color: var(--accent); }
+.banner.ng { background: var(--red-bg); border-color: var(--red); } .banner.ng .go { color: var(--red); }
+.school-main .btn { margin-top: 6px; }
