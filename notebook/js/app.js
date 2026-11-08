@@ -24,6 +24,8 @@ const S = {
   subjects: [],
   intervals: srs.DEFAULT_INTERVALS,
   pickGrid: { big: 5, small: 6 },
+  lastSubject: '',
+  dailyLimit: 10,
   problems: [],
   tests: [],
 };
@@ -123,6 +125,8 @@ async function load() {
   S.subjects = await getSetting('subjects', DEFAULT_SUBJECTS);
   S.intervals = await getSetting('intervals', srs.DEFAULT_INTERVALS);
   S.pickGrid = await getSetting('pickGrid', S.pickGrid);
+  S.lastSubject = await getSetting('lastSubject', '');
+  S.dailyLimit = await getSetting('dailyLimit', 10);
   S.problems = await db.all('problems');
   S.tests = await db.all('tests');
 }
@@ -153,9 +157,14 @@ function render() {
 function renderHome() {
   const t = todayStr();
   const due = dueProblems();
+  const queue = todayQueue();
+  const later = due.length - queue.length;
+  const doneToday = reviewedToday();
+  const streak = streakDays();
+  const grads = graduatedThisWeek();
   const active = activeProblems();
   const mastered = S.problems.length - active.length;
-  const bySubject = S.subjects.map((s) => ({ s, n: due.filter((p) => p.subject === s.id).length })).filter((x) => x.n);
+  const bySubject = S.subjects.map((s) => ({ s, n: todayQueue(s.id).length })).filter((x) => x.n);
   const week = [];
   for (let i = 1; i <= 7; i++) {
     const d = srs.addDays(t, i);
@@ -180,10 +189,20 @@ function renderHome() {
 
   app.innerHTML = `
     <section class="card hero">
-      <div class="due-count"><span class="num">${due.length}</span><span>問</span></div>
-      <p class="muted">${due.length ? '今日解き直す問題があります' : '今日の解き直しはありません 🎉'}</p>
-      ${due.length ? `<button class="btn primary big" data-act="startReview">▶ 解き直しをはじめる</button>` : ''}
-      ${bySubject.length > 1 ? `<div class="row wrap center">${bySubject.map(({ s, n }) => `<button class="btn small" data-act="startReview" data-subject="${esc(s.id)}">${esc(s.name)}だけ（${n}）</button>`).join('')}</div>` : ''}
+      ${queue.length ? `
+        <p class="muted">今日の解き直し</p>
+        <div class="due-count"><span class="num">${queue.length}</span><span>問</span></div>
+        <button class="btn primary big" data-act="startReview">▶ 解き直しをはじめる</button>
+        ${bySubject.length > 1 ? `<div class="row wrap center">${bySubject.map(({ s, n }) => `<button class="btn small" data-act="startReview" data-subject="${esc(s.id)}">${esc(s.name)}だけ（${n}）</button>`).join('')}</div>` : ''}
+        <p class="muted small">途中でやめても大丈夫。残りは明日に回ります。</p>`
+      : doneToday ? `
+        <h1>今日の分はおしまい 🎉</h1>
+        <p class="muted">${doneToday} 問解き直しました。</p>`
+      : `<h1>今日の解き直しはありません</h1>`}
+      ${later > 0 ? `
+        <p class="muted small">ほかに ${later} 問が待っています。1 日 ${S.dailyLimit} 問ずつ、古い順に出てきます。</p>
+        ${queue.length ? '' : `<button class="btn" data-act="moreReview" data-n="5">もう 5 問やる</button>`}` : ''}
+      ${streak || grads ? `<div class="row center wrap streak">${streak ? `<span>🔥 ${streak} 日連続</span>` : ''}${grads ? `<span>🎓 今週の卒業 ${grads} 問</span>` : ''}</div>` : ''}
     </section>
 
     <section class="card">
@@ -207,58 +226,54 @@ function renderHome() {
     </section>`;
 }
 
-// ---- 取りこみ
+// ---- 取りこみ（1 画面：教科 → 写真 → まちがえた番号をタップ → 保存）
 function newImportState() {
-  return { step: 1, title: '', date: todayStr(), subject: S.subjects[0]?.id || '', answer: [], question: [], drafts: [], aiNotes: '', busy: '', saved: false, grid: { ...S.pickGrid }, picked: new Set(), pickUnit: '' };
+  const subject = S.subjects.some((s) => s.id === S.lastSubject) ? S.lastSubject : S.subjects[0]?.id || '';
+  return { title: '', date: todayStr(), subject, answer: [], question: [], drafts: [], aiNotes: '', busy: '', saved: false, grid: { ...S.pickGrid }, rowUnits: {} };
+}
+
+function autoTitle(st) {
+  return `${shortDate(st.date)} ${subjectOf(st.subject).name}のテスト`;
 }
 
 function renderImport() {
   if (!importState) importState = newImportState();
   const st = importState;
-  const steps = ['テスト', '写真', 'まちがい'];
-  const head = `<ol class="wizard">${steps.map((s, i) => `<li class="${st.step === i + 1 ? 'on' : st.step > i + 1 ? 'done' : ''}">${i + 1}. ${s}</li>`).join('')}</ol>`;
-
-  if (st.step === 1) {
-    app.innerHTML = `${head}
-      <section class="card form">
-        <label>テストの名前<input data-imp="title" value="${esc(st.title)}" placeholder="例：第3回 合判模試"></label>
-        <label>実施日<input type="date" data-imp="date" value="${esc(st.date)}"></label>
-        <label>教科<select data-imp="subject">${subjectOptions(st.subject)}</select></label>
-        <p class="muted small">教科ごとに取りこみます。4 教科のテストなら、教科ごとに 1 回ずつ取りこんでください。</p>
-        <div class="row end"><button class="btn primary" data-act="impStep" data-step="2">次へ →</button></div>
-      </section>`;
-    return;
-  }
-
-  if (st.step === 2) {
-    const pageList = (kind, label, hint) => `
-      <section class="card">
-        <h2>${label}</h2>
-        <p class="muted small">${hint}</p>
-        <div class="thumbs">
-          ${st[kind].map((p, i) => `<figure><img src="${p.url}" alt="${label} ${i + 1}枚目"><figcaption>${i + 1}枚目 <button class="link" data-act="impRemovePage" data-kind="${kind}" data-i="${i}">削除</button></figcaption></figure>`).join('')}
-        </div>
-        <div class="row wrap photo-actions">
-          <label class="btn primary">📷 撮影する<input type="file" accept="image/*" capture="environment" data-act-change="impAddPages" data-kind="${kind}" hidden></label>
-          <label class="btn">🖼 写真を読み込む<input type="file" accept="image/*" multiple data-act-change="impAddPages" data-kind="${kind}" hidden></label>
-        </div>
-      </section>`;
-    app.innerHTML = `${head}
-      ${pageList('answer', '① 採点済みの解答用紙', '○×がついた解答用紙です。撮影するか、とってある写真を読み込んでください（何枚でも）。')}
-      ${pageList('question', '② 問題用紙', 'まちがえた問題がのっているページだけで大丈夫です。')}
-      ${st.busy ? `<p class="busy">${esc(st.busy)}</p>` : ''}
-      ${st.answer.length || st.question.length ? '' : `<p class="muted small">問題用紙か解答用紙の写真を 1 枚以上入れると、次へ進めます。</p>`}
-      <div class="row between">
-        <button class="btn" data-act="impStep" data-step="1">← もどる</button>
-        <button class="btn primary" data-act="impStep" data-step="3" ${st.answer.length || st.question.length ? '' : 'disabled'}>次へ →</button>
-      </div>`;
-    return;
-  }
-
-  // step 3
+  const hasPhotos = st.answer.length + st.question.length > 0;
   const hasKey = !!getApiKey() && !EMBEDDED;
-  app.innerHTML = `${head}
+  const photoRow = (kind, label) => `
+    <div class="photorow">
+      <div class="row between"><b>${label}</b><span class="muted small">${st[kind].length ? `${st[kind].length} 枚` : ''}</span></div>
+      ${st[kind].length ? `<div class="thumbs">${st[kind].map((p, i) => `<figure><img src="${p.url}" alt="${label} ${i + 1}枚目"><figcaption>${i + 1} <button class="link" data-act="impRemovePage" data-kind="${kind}" data-i="${i}" aria-label="${label} ${i + 1}枚目を削除">削除</button></figcaption></figure>`).join('')}</div>` : ''}
+      <div class="row wrap photo-actions">
+        <label class="btn ${st[kind].length ? '' : 'primary'}">📷 撮影する<input type="file" accept="image/*" capture="environment" data-act-change="impAddPages" data-kind="${kind}" hidden></label>
+        <label class="btn">🖼 写真を読み込む<input type="file" accept="image/*" multiple data-act-change="impAddPages" data-kind="${kind}" hidden></label>
+      </div>
+    </div>`;
+  const missing = !hasPhotos ? '写真を 1 枚以上入れてください' : !st.drafts.length ? 'まちがえた番号をタップしてください' : '';
+  app.innerHTML = `
+    <section class="card">
+      <div class="subjectbar" role="group" aria-label="教科">
+        ${S.subjects.map((s) => `<button type="button" class="subj ${s.id === st.subject ? 'on' : ''}" style="--c:${esc(s.color)}" data-act="impSubject" data-id="${esc(s.id)}" aria-pressed="${s.id === st.subject}">${esc(s.name)}</button>`).join('')}
+      </div>
+      <details class="testinfo">
+        <summary>${esc(st.title || autoTitle(st))}<span class="muted small">（名前・日付を変える）</span></summary>
+        <div class="grid2 form">
+          <label>テストの名前<input id="impTitle" data-imp="title" value="${esc(st.title)}" placeholder="${esc(autoTitle(st))}"></label>
+          <label>実施日<input id="impDate" type="date" data-imp="date" value="${esc(st.date)}"></label>
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>写真</h2>
+      ${photoRow('answer', '採点済みの解答用紙')}
+      ${photoRow('question', '問題用紙')}
+      ${st.busy ? `<p class="busy">${esc(st.busy)}</p>` : ''}
+    </section>
+
     ${pickPanel(st)}
+
     ${EMBEDDED ? '' : `
     <section class="card">
       <h2>AI で読み取る</h2>
@@ -266,14 +281,50 @@ function renderImport() {
         ? `<p class="muted small">番号をタップするかわりに、写真から × の問題を AI に見つけてもらうこともできます。</p>
            <button class="btn accent" data-act="impAnalyze" ${st.busy || !st.answer.length ? 'disabled' : ''}>✨ AI でまちがいを読み取る</button>`
         : `<p class="muted small">設定で API キーを入れると、写真から × の問題を AI で読み取れます。</p>`}
-      ${st.busy ? `<p class="busy">${esc(st.busy)}</p>` : ''}
       ${st.aiNotes ? `<p class="note">AI のメモ：${esc(st.aiNotes)}</p>` : ''}
     </section>`}
-    ${st.drafts.map((d, i) => draftCard(d, i)).join('')}
-    <div class="row between">
-      <button class="btn" data-act="impStep" data-step="2">← 写真にもどる</button>
-      <button class="btn primary" data-act="impSave" ${st.drafts.length && !st.busy ? '' : 'disabled'}>✔ ${st.drafts.length} 問をノートに保存</button>
+
+    ${st.drafts.length ? `
+    <section class="card">
+      <h2>登録する問題 <span class="muted">${st.drafts.length}問</span></h2>
+      <p class="muted small">切り抜き・答え・まちがえた理由は、入れなくても保存できます（理由は解き直しのときにも選べます）。</p>
+      <ul class="dlist">${st.drafts.map((d, i) => importDraftRow(d, i, st)).join('')}</ul>
+    </section>` : ''}
+
+    <div class="savebar">
+      ${missing ? `<span class="muted small">${missing}</span>` : `<span class="muted small">明日から解き直しに出てきます</span>`}
+      <button class="btn primary" data-act="impSave" ${missing || st.busy ? 'disabled' : ''}>✔ ${st.drafts.length} 問を保存</button>
     </div>`;
+}
+
+function importDraftRow(d, i, st) {
+  const attr = `data-draft="${i}"`;
+  const crop = (kind, label) => {
+    const c = d[kind];
+    const img = c.url ? `<img src="${c.url}" alt="${label}">` : `<span class="muted small">まだ切り抜いていません</span>`;
+    return `<div class="cropbox"><div class="cropprev">${img}</div><button class="btn small" data-act="cropDraft" data-kind="${kind}" ${attr}>✂ ${label}を切り抜く</button></div>`;
+  };
+  return `
+    <li class="drow">
+      <div class="drow-head">
+        <b class="dlabel">${esc(d.label || '（番号なし）')}</b>
+        <select ${attr} data-f="unit" aria-label="${esc(d.label)} の単元">${unitOptions(st.subject, d.unit)}</select>
+        <button class="link danger" data-act="impRemoveDraft" ${attr} aria-label="${esc(d.label)} を取り消す">✕</button>
+      </div>
+      <details class="more" ${attr} ${d.open ? 'open' : ''}>
+        <summary>切り抜き・答え・理由${d.q.url || d.a.url ? ' ✂' : ''}${d.reason ? ` ・${esc(REASONS[d.reason])}` : ''}</summary>
+        <div class="crops">${crop('q', '問題')}${crop('a', '解答')}</div>
+        <fieldset class="reasons"><legend>まちがえた理由</legend>
+          ${Object.entries(REASONS).map(([k, v]) => `<label class="pill"><input type="radio" name="reason-${i}" value="${k}" ${attr} data-f="reason" ${d.reason === k ? 'checked' : ''}>${v}</label>`).join('')}
+        </fieldset>
+        <div class="grid2">
+          <label>問題番号<input ${attr} data-f="label" value="${esc(d.label)}"></label>
+          <label>正しい答え<input ${attr} data-f="correctAnswer" value="${esc(d.correctAnswer)}"></label>
+          <label>自分の答え<input ${attr} data-f="myAnswer" value="${esc(d.myAnswer)}"></label>
+        </div>
+        <label>解き方のポイント・次に気をつけること<textarea ${attr} data-f="memo" rows="2">${esc(d.memo)}</textarea></label>
+      </details>
+    </li>`;
 }
 
 function draftCard(d, i, { subject = importState?.subject, editing = false } = {}) {
@@ -306,49 +357,57 @@ function draftCard(d, i, { subject = importState?.subject, editing = false } = {
     </section>`;
 }
 
-// ---- 問題番号の表から、まちがえた番号をタップで選ぶ
+// ---- 問題番号の表から、まちがえた番号をタップで選ぶ（タップした番号がそのまま登録する問題になる）
 function gridLabels(grid) {
+  if (grid.small < 2) {
+    const items = [];
+    for (let b = 1; b <= grid.big; b++) items.push({ label: `問${b}`, text: `${b}` });
+    return [{ head: '問', row: 0, items }];
+  }
   const rows = [];
   for (let b = 1; b <= grid.big; b++) {
-    if (grid.small >= 2) {
-      const row = [];
-      for (let k = 1; k <= grid.small; k++) row.push({ label: `大問${b} (${k})`, text: `(${k})` });
-      rows.push({ head: `大問${b}`, items: row });
-    } else {
-      rows.push({ head: '', items: [{ label: `問${b}`, text: `${b}` }] });
-    }
+    const items = [];
+    for (let k = 1; k <= grid.small; k++) items.push({ label: `大問${b} (${k})`, text: `(${k})` });
+    rows.push({ head: `大問${b}`, row: b, items });
   }
-  // 小問がないときは 1 行にまとめる
-  return grid.small >= 2 ? rows : [{ head: '問', items: rows.flatMap((r) => r.items) }];
+  return rows;
+}
+
+function rowUnitOptions(subjectId, selected) {
+  const units = subjectOf(subjectId).units;
+  return `<option value="">単元…</option>${units.map((u) => `<option ${u === selected ? 'selected' : ''}>${esc(u)}</option>`).join('')}`;
 }
 
 function pickPanel(st) {
-  const added = new Set(st.drafts.map((d) => d.label));
-  const n = [...st.picked].filter((l) => !added.has(l)).length;
+  const picked = new Set(st.drafts.map((d) => d.label));
   return `
     <section class="card pick">
       <h2>まちがえた番号をタップ</h2>
-      <p class="muted small">× や減点の問題の番号をタップして、まとめて追加します。写真の切り抜きはあとからでもかまいません。</p>
       <div class="row wrap">
-        <label class="inline">大問の数<input type="number" min="1" max="20" inputmode="numeric" id="gridBig" data-grid="big" value="${st.grid.big}"></label>
-        <label class="inline">小問の数<input type="number" min="0" max="20" inputmode="numeric" id="gridSmall" data-grid="small" value="${st.grid.small}"></label>
+        <label class="inline">大問<input type="number" min="1" max="20" inputmode="numeric" id="gridBig" data-grid="big" value="${st.grid.big}"></label>
+        <label class="inline">小問<input type="number" min="0" max="20" inputmode="numeric" id="gridSmall" data-grid="small" value="${st.grid.small}"></label>
+        <span class="muted small">小問がなければ 0</span>
       </div>
-      <p class="muted small">小問がないテストは、小問の数を 0 にしてください（問1、問2… になります）。</p>
+      <p class="muted small">単元は大問ごとに 1 回えらぶと、その大問の問題みんなにつきます。</p>
       <div class="pickgrid">
         ${gridLabels(st.grid).map((r) => `
-          <div class="pickrow">${r.head ? `<span class="pickhead">${esc(r.head)}</span>` : ''}<div class="pickbtns">
-            ${r.items.map((it) => added.has(it.label)
-              ? `<button type="button" class="pickbtn added" disabled aria-label="${esc(it.label)}（追加ずみ）">${esc(it.text)}</button>`
-              : `<button type="button" class="pickbtn ${st.picked.has(it.label) ? 'on' : ''}" data-act="pickToggle" data-label="${esc(it.label)}" aria-pressed="${st.picked.has(it.label)}" aria-label="${esc(it.label)}">${esc(it.text)}</button>`).join('')}
-          </div></div>`).join('')}
+          <div class="pickrow">
+            <div class="pickside"><span class="pickhead">${esc(r.head)}</span>
+              <select class="rowunit" data-rowunit="${r.row}" aria-label="${esc(r.head)} の単元">${rowUnitOptions(st.subject, st.rowUnits[r.row])}</select></div>
+            <div class="pickbtns">
+              ${r.items.map((it) => `<button type="button" class="pickbtn ${picked.has(it.label) ? 'on' : ''}" data-act="pickToggle" data-label="${esc(it.label)}" data-row="${r.row}" aria-pressed="${picked.has(it.label)}" aria-label="${esc(it.label)}">${esc(it.text)}</button>`).join('')}
+            </div>
+          </div>`).join('')}
       </div>
-      <label class="inline">単元（まとめて）<select id="pickUnit" data-imp="pickUnit">${unitOptions(st.subject, st.pickUnit).replace('（単元をえらぶ）', '（あとで選ぶ）').replace('<option value="__new">＋ 新しい単元…</option>', '')}</select></label>
-      <div class="row end"><button class="btn primary" data-act="pickAdd" ${n ? '' : 'disabled'}>選んだ ${n} 問を追加</button></div>
     </section>`;
 }
 
+function sortDrafts(st) {
+  st.drafts.sort((a, b) => (a.label || '').localeCompare(b.label || '', 'ja', { numeric: true }));
+}
+
 function newDraft(extra = {}) {
-  return { key: uid(), label: '', unit: '', reason: 'understand', myAnswer: '', correctAnswer: '', questionText: '', memo: '', q: { page: -1, box: null, url: null }, a: { page: -1, box: null, url: null }, ...extra };
+  return { key: uid(), label: '', unit: '', reason: '', myAnswer: '', correctAnswer: '', questionText: '', memo: '', q: { page: -1, box: null, url: null }, a: { page: -1, box: null, url: null }, ...extra };
 }
 
 async function refreshCropPreview(c, pages) {
@@ -434,7 +493,7 @@ async function saveImport() {
   st.busy = '保存しています…';
   render();
   try {
-    const test = { id: uid(), title: st.title || `${subjectOf(st.subject).name}のテスト`, date: st.date, subject: st.subject, answerPages: [], questionPages: [], createdAt: Date.now() };
+    const test = { id: uid(), title: st.title.trim() || autoTitle(st), date: st.date, subject: st.subject, answerPages: [], questionPages: [], createdAt: Date.now() };
     for (const p of st.answer) test.answerPages.push(await saveImage(p.blob));
     for (const p of st.question) test.questionPages.push(await saveImage(p.blob));
     const added = todayStr();
@@ -480,30 +539,61 @@ function noCropHint(p, t, kind) {
   return msg + (btns ? `<div class="row wrap">${btns}</div>` : '');
 }
 
+// ---- 1 日の上限
+// 今日すでに解き直した数（予定どおりの解き直しだけ数える。練習は数えない）
+function reviewedToday() {
+  const t = todayStr();
+  return S.problems.reduce((n, p) => n + p.srs.history.filter((h) => h.date === t && !h.practice).length, 0);
+}
+// 今日やる分。上限をこえた分はそのまま「期限切れ」で残り、明日以降に古い順で出てくる
+function todayQueue(subject) {
+  const due = dueProblems(subject);
+  if (!S.dailyLimit) return due;
+  return due.slice(0, Math.max(0, S.dailyLimit - reviewedToday()));
+}
+function streakDays() {
+  const days = new Set(S.problems.flatMap((p) => p.srs.history.map((h) => h.date)));
+  let d = todayStr();
+  if (!days.has(d)) d = srs.addDays(d, -1);
+  let n = 0;
+  while (days.has(d)) { n++; d = srs.addDays(d, -1); }
+  return n;
+}
+function graduatedThisWeek() {
+  const t = todayStr();
+  return S.problems.filter((p) => p.srs.mastered && p.srs.lastReviewed && srs.daysBetween(p.srs.lastReviewed, t) < 7).length;
+}
+
 // ---- 解き直し
-function startReview({ subject, ids, practice = false } = {}) {
-  const list = ids ? ids.map((id) => S.problems.find((p) => p.id === id)).filter(Boolean) : dueProblems(subject);
+function startReview({ subject, ids, practice = false, extra = 0 } = {}) {
+  const list = ids ? ids.map((id) => S.problems.find((p) => p.id === id)).filter(Boolean)
+    : extra ? dueProblems(subject).slice(0, extra) : todayQueue(subject);
   if (!list.length) { toast('解き直す問題はありません'); return; }
-  session = { ids: list.map((p) => p.id), i: 0, revealed: false, practice, results: { again: 0, hard: 0, good: 0 } };
+  session = { ids: list.map((p) => p.id), i: 0, revealed: false, practice, results: { again: 0, hard: 0, good: 0 }, undo: null };
   go('review');
+}
+
+function undoBar() {
+  const u = session?.undo;
+  if (!u) return '';
+  return `<div class="undobar" role="status"><span>「${esc(u.prev.label || '問題')}」を ${srs.RESULTS[u.result].short} にしました</span><button class="btn small" data-act="undo">↩ 元に戻す</button></div>`;
 }
 
 function renderReview() {
   if (!session) { go('home'); return; }
   if (session.i >= session.ids.length) {
     const r = session.results;
-    app.innerHTML = `
+    app.innerHTML = `${undoBar()}
       <section class="card hero">
         <h1>おつかれさま！</h1>
         <p>${session.ids.length} 問を解き直しました。</p>
         <div class="stats3"><div><b>${r.good}</b><span>○ 解けた</span></div><div><b>${r.hard}</b><span>△ あやしい</span></div><div><b>${r.again}</b><span>× 解けない</span></div></div>
         <p class="muted small">× の問題は明日また出てきます。ノートの「解き方のポイント」を見直しておきましょう。</p>
         <div class="row center wrap">
-          ${dueProblems().length ? `<button class="btn primary" data-act="startReview">残りの解き直し（${dueProblems().length}）</button>` : ''}
-          <button class="btn" data-go="home">ホームへ</button>
+          ${todayQueue().length ? `<button class="btn primary" data-act="startReview">残りの解き直し（${todayQueue().length}）</button>` : ''}
+          <button class="btn" data-act="endReview">ホームへ</button>
         </div>
       </section>`;
-    session = null;
     return;
   }
   const p = S.problems.find((x) => x.id === session.ids[session.i]);
@@ -516,7 +606,7 @@ function renderReview() {
     const sub = session.practice && !due && k !== 'again' ? '予定は変えない' : srs.intervalLabel(n);
     return `<button class="btn grade ${k}" data-act="grade" data-r="${k}"><b>${srs.RESULTS[k].label}</b><small>次は ${sub}</small></button>`;
   };
-  app.innerHTML = `
+  app.innerHTML = `${undoBar()}
     <div class="progress"><span style="width:${(session.i / session.ids.length) * 100}%"></span></div>
     <p class="muted small center">${session.i + 1} / ${session.ids.length} 問目 ${session.practice ? '（練習）' : ''}</p>
     <section class="card">
@@ -532,10 +622,13 @@ function renderReview() {
         <dl class="kv">
           ${p.correctAnswer ? `<dt>正しい答え</dt><dd class="ok">${esc(p.correctAnswer)}</dd>` : ''}
           ${p.myAnswer ? `<dt>テストでの答え</dt><dd class="ng">${esc(p.myAnswer)}</dd>` : ''}
-          <dt>まちがえた理由</dt><dd>${esc(REASONS[p.reason] || '')}</dd>
           ${p.memo ? `<dt>ポイント</dt><dd>${esc(p.memo)}</dd>` : ''}
         </dl>
         ${p.answerImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.answerImg}"><img data-img="${p.answerImg}" alt="採点済みの解答"></button>` : noCropHint(p, t, 'a')}
+        <div class="reasonpick">
+          <p class="muted small">${p.reason ? 'まちがえた理由' : 'テストでまちがえた理由は？（えらばなくても進めます）'}</p>
+          <div class="row wrap">${Object.entries(REASONS).map(([k, v]) => `<button type="button" class="pill ${p.reason === k ? 'on' : ''}" data-act="setReason" data-id="${p.id}" data-r="${k}" aria-pressed="${p.reason === k}">${v}</button>`).join('')}</div>
+        </div>
       </section>
       <div class="grades">${btn('again')}${btn('hard')}${btn('good')}</div>
       <p class="muted small center">キーボード：1・2・3 で評価</p>`
@@ -553,6 +646,7 @@ async function grade(result) {
   } else {
     next = srs.review(p.srs, result, t, S.intervals);
   }
+  session.undo = { prev: p, result };
   await saveProblem({ ...p, srs: next });
   session.results[result]++;
   session.i++;
@@ -652,7 +746,7 @@ function renderDetail() {
   app.innerHTML = `
     <div class="row"><button class="link" data-go="list">← ノートへ</button></div>
     <section class="card">
-      <div class="row wrap">${chip(p.subject)}<span class="tag">${esc(p.unit || '単元なし')}</span><span class="tag">${esc(REASONS[p.reason] || '')}</span></div>
+      <div class="row wrap">${chip(p.subject)}<span class="tag">${esc(p.unit || '単元なし')}</span>${REASONS[p.reason] ? `<span class="tag">${esc(REASONS[p.reason])}</span>` : ''}</div>
       <h1>${esc(p.label || '問題')}</h1>
       <p class="muted small">${esc(t ? `${t.title}（${fmtDate(t.date)}）` : '')}</p>
       ${p.questionImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.questionImg}"><img data-img="${p.questionImg}" alt="問題"></button>` : noCropHint(p, t, 'q')}
@@ -749,6 +843,8 @@ function renderStats() {
   }
   const maxDay = Math.max(1, ...days.map((x) => x.n));
   const reasonCount = Object.keys(REASONS).map((k) => ({ k, n: S.problems.filter((p) => p.reason === k).length }));
+  const noReason = S.problems.filter((p) => !REASONS[p.reason]).length;
+  if (noReason) reasonCount.push({ k: '', n: noReason });
   const maxReason = Math.max(1, ...reasonCount.map((x) => x.n));
   const reviews = S.problems.flatMap((p) => p.srs.history);
   const last30 = reviews.filter((h) => srs.daysBetween(h.date, t) < 30);
@@ -798,7 +894,7 @@ function renderStats() {
     </section>
     <section class="card">
       <h2>まちがえた理由</h2>
-      <ul class="hlist">${reasonCount.map((x) => `<li><span>${REASONS[x.k]}</span><span class="hbar"><span class="r" style="width:${(x.n / maxReason) * 100}%"></span></span><b>${x.n}</b></li>`).join('')}</ul>
+      <ul class="hlist">${reasonCount.map((x) => `<li><span>${x.k ? REASONS[x.k] : '未記入'}</span><span class="hbar"><span class="r" style="width:${(x.n / maxReason) * 100}%"></span></span><b>${x.n}</b></li>`).join('')}</ul>
     </section>
     ${subjectRows || '<p class="muted center">まだ問題がありません。</p>'}`;
 }
@@ -819,9 +915,11 @@ function renderSettings() {
     </section>
 
     <section class="card form">
-      <h2>復習の間隔</h2>
+      <h2>復習の間隔と 1 日の量</h2>
       <p class="muted small">○（自力で解けた）のたびに、次の日数あとに出てきます。最後まで ○ なら卒業です。× なら最初にもどり、△ ならその段階の半分の日数あとにもう一度出ます。</p>
       <label>日数（カンマ区切り）<input id="intervals" value="${esc(S.intervals.join(', '))}" inputmode="numeric"></label>
+      <label>1 日に解き直す上限（0 で上限なし）<input id="dailyLimit" type="number" min="0" max="200" inputmode="numeric" value="${S.dailyLimit}"></label>
+      <p class="muted small">上限をこえた分は消えずに、次の日以降に古い順で出てきます。</p>
       <div class="row end"><button class="btn small" data-act="resetIntervals">元にもどす</button><button class="btn primary small" data-act="saveIntervals">保存</button></div>
     </section>
 
@@ -879,6 +977,25 @@ const actions = {
   reveal: () => { session.revealed = true; render(); },
   grade: (el) => grade(el.dataset.r),
   endReview: () => { session = null; go('home'); },
+  async undo() {
+    const u = session?.undo;
+    if (!u) return;
+    await saveProblem(u.prev);
+    session.results[u.result]--;
+    session.i = Math.max(0, session.i - 1);
+    session.revealed = true;
+    session.undo = null;
+    toast('元に戻しました');
+    render();
+  },
+  async setReason(el) {
+    const p = S.problems.find((x) => x.id === el.dataset.id);
+    const reason = p.reason === el.dataset.r ? '' : el.dataset.r;
+    await saveProblem({ ...p, reason });
+    if (session?.undo?.prev.id === p.id) session.undo.prev = { ...session.undo.prev, reason };
+    render();
+  },
+  moreReview: (el) => startReview({ extra: Number(el.dataset.n) || 5 }),
   practiceGroup: (el) => startReview({ ids: el.dataset.ids.split(','), practice: true }),
   practiceOne: (el) => startReview({ ids: [el.dataset.id], practice: true }),
   open: (el) => go('detail', { id: el.dataset.id }),
@@ -914,7 +1031,6 @@ const actions = {
   },
 
   // 取りこみ
-  impStep: (el) => { importState.step = Number(el.dataset.step); render(); window.scrollTo(0, 0); },
   impRemovePage: (el) => {
     const list = importState[el.dataset.kind];
     const [removed] = list.splice(Number(el.dataset.i), 1);
@@ -926,25 +1042,24 @@ const actions = {
   pickToggle: (el) => {
     const st = importState;
     const l = el.dataset.label;
-    if (st.picked.has(l)) st.picked.delete(l); else st.picked.add(l);
-    el.classList.toggle('on', st.picked.has(l));
-    el.setAttribute('aria-pressed', st.picked.has(l));
-    const added = new Set(st.drafts.map((d) => d.label));
-    const n = [...st.picked].filter((x) => !added.has(x)).length;
-    const btn = app.querySelector('[data-act=pickAdd]');
-    btn.textContent = `選んだ ${n} 問を追加`;
-    btn.disabled = !n;
-  },
-  pickAdd: () => {
-    const st = importState;
-    const added = new Set(st.drafts.map((d) => d.label));
-    // 表の順番どおりに追加する
-    const order = gridLabels(st.grid).flatMap((r) => r.items.map((it) => it.label));
-    const labels = order.filter((l) => st.picked.has(l) && !added.has(l));
-    for (const l of labels) st.drafts.push(newDraft({ label: l, unit: st.pickUnit, open: false }));
-    st.picked.clear();
+    const i = st.drafts.findIndex((d) => d.label === l);
+    if (i >= 0) st.drafts.splice(i, 1);
+    else {
+      const row = Number(el.dataset.row);
+      st.drafts.push(newDraft({ label: l, row, unit: st.rowUnits[row] || '', unitFromRow: true }));
+      sortDrafts(st);
+    }
     render();
-    toast(`${labels.length} 問を追加しました。単元と理由をえらんで保存してください。`);
+  },
+  impSubject: async (el) => {
+    const st = importState;
+    if (st.subject === el.dataset.id) return;
+    st.subject = el.dataset.id;
+    st.rowUnits = {};
+    for (const d of st.drafts) if (d.unitFromRow) d.unit = '';
+    S.lastSubject = st.subject;
+    setSetting('lastSubject', st.subject);
+    render();
   },
   impRemoveDraft: (el) => { importState.drafts.splice(Number(el.dataset.draft), 1); render(); },
   impSave: () => saveImport(),
@@ -1008,6 +1123,10 @@ const actions = {
     render();
   },
   async saveIntervals() {
+    const limit = Math.round(Number(document.getElementById('dailyLimit').value));
+    if (!(limit >= 0)) { await ask('1 日の上限は 0 以上の数で入れてください', { cancel: null }); return; }
+    S.dailyLimit = limit;
+    await setSetting('dailyLimit', limit);
     const list = srs.parseIntervals(document.getElementById('intervals').value);
     if (!list) { await ask('1 以上の日数を、小さい順にカンマで区切って入れてください', { cancel: null }); return; }
     S.intervals = list;
@@ -1077,7 +1196,7 @@ document.addEventListener('change', async (e) => {
 });
 document.addEventListener('input', (e) => handleField(e.target));
 // 番号の表の大きさを変えたら表を作り直す（入力中ではなく確定したとき）
-document.addEventListener('change', (e) => { if (e.target.dataset.grid && view.name === 'import') render(); });
+document.addEventListener('change', (e) => { if ((e.target.dataset.grid || e.target.dataset.rowunit != null) && view.name === 'import') render(); });
 // 下書きの「くわしく」の開け閉めを覚えておく
 document.addEventListener('toggle', (e) => {
   const el = e.target;
@@ -1100,11 +1219,18 @@ function handleField(el) {
     setSetting('pickGrid', S.pickGrid);
     return;
   }
+  if (el.dataset.rowunit != null && importState) {
+    const row = Number(el.dataset.rowunit);
+    importState.rowUnits[row] = el.value;
+    for (const d of importState.drafts) if (d.row === row && d.unitFromRow) d.unit = el.value;
+    return;
+  }
   if (el.dataset.imp && importState) { importState[el.dataset.imp] = el.value; return; }
   if (el.dataset.f && el.dataset.draft != null) {
     const d = draftFor(el);
     if (!d) return;
     if (el.type === 'radio') { if (el.checked) d.reason = el.value; } else if (el.value !== '__new') d[el.dataset.f] = el.value;
+    if (el.dataset.f === 'unit') d.unitFromRow = false;
   }
 }
 

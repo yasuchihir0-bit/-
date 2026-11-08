@@ -255,3 +255,45 @@ details.more { border-top: 1px solid var(--line); margin-top: 6px; }
 .paperhint { background: var(--bg); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
 .photo-actions .btn { flex: 1 1 10em; }
 [hidden] { display: none !important; }
+
+/* 1 画面の取りこみ */
+.subjectbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.subj {
+  font: inherit; font-weight: 700; min-height: 40px; padding: 4px 14px; border-radius: 999px; cursor: pointer;
+  color: var(--text); background: var(--bg); border: 2px solid var(--line);
+}
+.subj.on { background: var(--c); border-color: var(--c); color: #fff; }
+.testinfo { margin-top: 8px; }
+.testinfo summary { font-weight: 600; }
+.testinfo summary .muted { font-weight: 400; margin-left: 6px; }
+.photorow + .photorow { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+.photorow .thumbs { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; margin: 6px 0; }
+.pickrow { align-items: center; }
+.pickside { flex: none; width: 6.4em; display: flex; flex-direction: column; gap: 2px; }
+.pickside .pickhead { width: auto; padding-top: 0; }
+.rowunit { font-size: .78rem; padding: 3px 4px; margin: 0; border-radius: 6px; }
+.dlist { list-style: none; margin: 0; padding: 0; }
+.drow { border-top: 1px solid var(--line); padding: 8px 0; }
+.drow-head { display: flex; align-items: center; gap: 8px; }
+.drow-head .dlabel { flex: none; min-width: 5.5em; font-variant-numeric: tabular-nums; }
+.drow-head select { flex: 1; min-width: 0; margin: 0; padding: 6px 8px; }
+.drow-head .link { flex: none; font-size: 1.1rem; }
+.drow details.more { border-top: 0; margin-top: 2px; }
+.drow details.more summary { font-weight: 400; font-size: .86rem; color: var(--accent); }
+.savebar {
+  position: sticky; bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 4;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px 12px; margin-top: 8px;
+}
+.savebar .btn { flex: none; }
+
+/* 解き直し */
+.reasonpick { margin-top: 10px; }
+.reasonpick p { margin: 0 0 2px; }
+button.pill { font: inherit; font-size: .88rem; background: var(--card); margin: 0 !important; }
+button.pill.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 700; }
+.undobar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 6px 6px 6px 12px; margin-bottom: 10px; font-size: .9rem;
+}
+.streak { gap: 16px; font-weight: 600; margin-top: 12px; }
