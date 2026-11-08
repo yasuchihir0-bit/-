@@ -20,9 +20,21 @@
 ## claude.ai の Artifact として開く
 `python3 calendar/tools/build_artifact.py 出力先.html` で、CSS と JS を 1 枚にまとめた Artifact 用の HTML を作れます。
 Artifact では次のちがいがあります（アプリが自動で切りかえます）。
-- 通知用のファイル（.ics）は保存できないため、予定ごとの「📅 Googleカレンダーに追加」リンクを出す
+- 通知用のファイル（.ics）は保存できないため、予定ごとに、えらんだカレンダー（Google・Outlook 個人用・Outlook Microsoft 365）の追加リンクを出す
 - データの書き出し（JSON）は、Artifact の保存確認を通して保存する
 - 確認（削除など）は画面の中のダイアログで聞く（通常版も同じ）
+
+## 連携できるカレンダー
+設定の「いつも使うカレンダー」でえらぶと、「やること」の各予定に追加リンクが出ます。
+
+| カレンダー | 方法 |
+| --- | --- |
+| Google カレンダー | 追加画面のリンク |
+| Outlook（個人用 outlook.com・hotmail） | 追加画面のリンク（outlook.live.com） |
+| Outlook（仕事・学校の Microsoft 365） | 追加画面のリンク（outlook.office.com） |
+| iPhone・Mac のカレンダーなど | .ics ファイル（1件ずつ、またはまとめて。Artifact 版では使えない） |
+
+Yahoo!カレンダーは、予定を追加する公開の URL の形式が確認できなかったため入れていません。
 
 ## 通知のしくみ
 Web アプリは、**閉じているあいだは自分で通知を出せません**（出すには通知を送るサーバーが必要です）。そこで次の 2 つを組み合わせています。

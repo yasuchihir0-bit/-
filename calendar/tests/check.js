@@ -60,5 +60,16 @@ ok(ics.includes('DTSTART;VALUE=DATE:20270206') && ics.includes('DTEND;VALUE=DATE
 ok(ics.includes('TRIGGER:-PT63H') && ics.includes('TRIGGER:PT9H'), 'ics alarms');
 ok(ics.split('\r\n').every((l) => Buffer.byteLength(l) <= 75), 'ics line folding');
 
+// カレンダーの追加リンク
+const te = { date: '2027-01-06', time: '09:00', note: 'メモ' }, ae = { date: '2027-01-31', time: '', note: '' };
+const gq = (u) => new URL(u).searchParams;
+ok(gq(S.gcalUrl(te, 't')).get('dates') === '20270106T090000/20270106T100000', 'google timed');
+ok(gq(S.gcalUrl(ae, 't')).get('dates') === '20270131/20270201', 'google all-day（月またぎ）');
+const o = gq(S.outlookUrl(te, 't', 'outlook.live.com'));
+ok(o.get('startdt') === '2027-01-06T09:00:00+09:00' && o.get('allday') === 'false', 'outlook timed');
+const oa = gq(S.outlookUrl(ae, 't', 'outlook.office.com'));
+ok(oa.get('startdt') === '2027-01-31' && oa.get('enddt') === '2027-02-01' && oa.get('allday') === 'true', 'outlook all-day');
+ok(S.CALS.every((c) => c.ics || /^https:\/\//.test(c.link(te, 't'))), 'cal links');
+
 console.log(fail ? `${fail} 件の問題` : `OK（${new Set(P.map((p) => p.school)).size} 校・${P.length} 回／テスト用の予定 ${ev.length} 件）`);
 process.exit(fail ? 1 : 0);

@@ -175,5 +175,30 @@
     return 'https://calendar.google.com/calendar/render?' + q.toString();
   }
 
-  g.SCHED = { gcalUrl, TYPES, TYPE, WD, pad, parseDate, ymd, daysUntil, fmtDate, countdown, eventKey, buildEvents, upcoming, urgency, findConflicts, dueReminders, toICS };
+  // Outlook（個人の outlook.com / 仕事・学校の Microsoft 365）の「予定を追加」画面
+  function outlookUrl(e, label, host) {
+    let start, end, allday;
+    if (e.time) {
+      const [h, m] = e.time.split(':').map(Number);
+      start = `${e.date}T${pad(h)}:${pad(m)}:00+09:00`;
+      end = `${e.date}T${pad((h + 1) % 24)}:${pad(m)}:00+09:00`;
+      allday = 'false';
+    } else {
+      start = e.date;
+      end = ymd(new Date(parseDate(e.date).getTime() + 86400000 + 3600000));
+      allday = 'true';
+    }
+    const q = new URLSearchParams({ path: '/calendar/action/compose', rru: 'addevent', subject: label, startdt: start, enddt: end, allday, body: e.note || '' });
+    return `https://${host}/calendar/deeplink/compose?` + q.toString();
+  }
+
+  // 連携できるカレンダー。link: 予定ごとの追加画面の URL。ics: .ics ファイルで入れる
+  const CALS = [
+    { id: 'google', label: 'Google カレンダー', link: (e, l) => gcalUrl(e, l) },
+    { id: 'outlook', label: 'Outlook（個人用 outlook.com・hotmail）', link: (e, l) => outlookUrl(e, l, 'outlook.live.com') },
+    { id: 'office', label: 'Outlook（仕事・学校の Microsoft 365）', link: (e, l) => outlookUrl(e, l, 'outlook.office.com') },
+    { id: 'ics', label: 'iPhone・Mac のカレンダーなど（.ics ファイル）', ics: true },
+  ];
+
+  g.SCHED = { gcalUrl, outlookUrl, CALS, TYPES, TYPE, WD, pad, parseDate, ymd, daysUntil, fmtDate, countdown, eventKey, buildEvents, upcoming, urgency, findConflicts, dueReminders, toICS };
 })(globalThis);

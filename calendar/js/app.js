@@ -16,7 +16,17 @@
   const today = () => new Date();
   // claude.ai の Artifact として開いているとき（.ics の保存や confirm() が使えない）
   const inArtifact = () => !!(window.claude && typeof window.claude.use === 'function');
-  const gcal = (e) => `<a class="gcal" href="${esc(S.gcalUrl(e, `${S.TYPE[e.type].icon}${e.school} ${S.TYPE[e.type].label}`))}" target="_blank" rel="noopener">📅 Googleカレンダーに追加</a>`;
+  const evLabel = (e) => `${S.TYPE[e.type].icon}${e.school} ${S.TYPE[e.type].label}`;
+  // いつも使うカレンダー（設定でえらぶ）。Artifact では .ics を保存できないので Google にもどす
+  const calOf = () => {
+    const c = S.CALS.find((x) => x.id === st.settings.cal) || S.CALS[0];
+    return c.ics && inArtifact() ? S.CALS[0] : c;
+  };
+  const gcal = (e) => {
+    const c = calOf();
+    if (c.ics) return `<button type="button" class="gcal linkbtn" data-ics1="${esc(e.key)}">📅 カレンダーに入れる（.ics）</button>`;
+    return `<a class="gcal" href="${esc(c.link(e, evLabel(e)))}" target="_blank" rel="noopener">📅 ${esc(c.label.replace(/（.*）/, ''))}に追加</a>`;
+  };
 
   // 確認のダイアログ（confirm() が使えない環境でも動くよう、画面の中に出す）
   function ask(msg, okLabel = 'はい') {
@@ -71,7 +81,7 @@
           <div class="ev-top">${chip(e.type)}<span class="cd">${S.countdown(e.days)}</span></div>
           <div class="ev-title">${esc(e.school)}</div>
           <div class="ev-date">${e.third ? '<span class="badge ng">⚠️ 未確認</span> ' : ''}${S.fmtDate(e.date, e.time)}${e.note ? ' ・ ' + esc(e.note) : ''}</div>
-          ${inArtifact() ? `<div class="small">${gcal(e)}</div>` : ''}
+          <div class="small">${gcal(e)}</div>
         </div></li>`;
     const group = (title, arr, cls = '') => (arr.length ? `<h2 class="${cls}">${title}<small>${arr.length}件</small></h2><ul class="evs">${arr.map(row).join('')}</ul>` : '');
     return `
@@ -246,6 +256,11 @@
   // 'none'＝まだ書き出していない / 'stale'＝書き出しのあとに変わった / 'ok'
   const icsState = () => (!st.settings.icsSig ? 'none' : st.settings.icsSig === icsSig() ? 'ok' : 'stale');
 
+  const calChooser = () => `<div class="calpick" role="radiogroup" aria-label="いつも使うカレンダー">${S.CALS.map((c) => {
+      const off = c.ics && inArtifact();
+      return `<label class="opt ${off ? 'off' : ''}"><input type="radio" name="cal" data-cal="${c.id}" ${calOf().id === c.id ? 'checked' : ''} ${off ? 'disabled' : ''}> ${esc(c.label)}${off ? '<span class="muted tiny">（このページでは使えません）</span>' : ''}</label>`;
+    }).join('')}</div>`;
+
   // ---- 設定 ----
   function viewSettings() {
     const offs = st.settings.offsets;
@@ -254,9 +269,11 @@
     const evs = S.buildEvents(st.schools).filter((e) => S.daysUntil(e.date, today()) >= 0);
     const artifactCard = `<section class="card warn">
       <h2>📱 スマホに通知を届ける</h2>
-      <p class="small">このページを<b>閉じていても</b>通知が届くように、予定を Google カレンダーに1件ずつ入れます。リンクを押すと Google カレンダーの追加画面が開くので、「通知」を「1日前」などにして保存してください。</p>
+      <p class="small">このページを<b>閉じていても</b>通知が届くように、予定をいつも使っているカレンダーに1件ずつ入れます。リンクを押すとカレンダーの追加画面が開くので、通知（アラーム）を「1日前」などにして保存してください。</p>
+      <h3 class="sub">いつも使うカレンダー</h3>
+      ${calChooser()}
       ${evs.length ? `<ul class="plain gcal-list">${evs.map((e) => `<li>${chip(e.type)} <b>${esc(e.school)}</b><div class="muted small">${S.fmtDate(e.date, e.time)}</div>${gcal(e)}</li>`).join('')}</ul>` : '<p class="muted small">これからの予定はまだありません。志望校を追加してください。</p>'}
-      <p class="muted small">すべての予定を通知つきでまとめて入れるファイル（.ics）は、このページからは保存できません。GitHub Pages などで公開したアプリ（calendar/index.html）の設定画面から書き出せます。</p>
+      <p class="muted small">iPhone・Mac のカレンダーに入れるファイル（.ics）は、このページからは保存できません。iPhone では、Google や Outlook のアカウントを「設定」→「カレンダー」→「アカウント」に追加すると、そこに入れた予定が iPhone のカレンダーにも出ます。.ics でまとめて入れたいときは、GitHub Pages などで公開したアプリ（calendar/index.html）を使ってください。</p>
     </section>`;
     if (inArtifact()) return artifactCard + settingsRest(offs, perm);
     return `<section class="card ${ics === 'ok' ? '' : 'warn'}">
@@ -273,6 +290,11 @@
         <li>うまくいかないときは、パソコンで Google カレンダー →「設定」→「インポート / エクスポート」からファイルを読みこむ</li>
         <li>Google カレンダーは、読みこんだ予定に自分の「通知の初期設定」を使うことがあります。予定を開いて通知の時刻を確かめてください</li></ol></details>
       <p class="muted small">同じ予定を読みこみ直すと上書きされます（iPhone は重なることがあるので、そのときは古い予定を消してください）。</p>
+    </section>
+    <section class="card">
+      <h2>📅 予定を1件ずつ入れる</h2>
+      <p class="small">「やること」の各予定に、えらんだカレンダーへの追加リンクが出ます。</p>
+      ${calChooser()}
     </section>` + settingsRest(offs, perm);
   }
 
@@ -358,6 +380,11 @@
       st.settings.offsets = [...set].sort((a, b) => b - a); save(); render();
     }, 'change');
     on('[data-perm]', () => Notification.requestPermission().then(render));
+    on('[data-cal]', (el) => { st.settings.cal = el.dataset.cal; save(); render(); toast(`${calOf().label} に入れるリンクを出します`); }, 'change');
+    on('[data-ics1]', (el) => {
+      const e = S.buildEvents(st.schools).find((x) => x.key === el.dataset.ics1);
+      if (e) download(`juken-${e.type}-${e.date}.ics`, S.toICS([e], st.settings.offsets, new Date()), 'text/calendar');
+    });
     on('[data-ics]', () => {
       download('juken-schedule.ics', S.toICS(S.buildEvents(st.schools), st.settings.offsets, new Date()), 'text/calendar');
       st.settings.icsSig = icsSig(); save(); render();

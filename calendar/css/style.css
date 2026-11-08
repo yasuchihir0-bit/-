@@ -163,3 +163,8 @@ h2.red { color: var(--red); }
 .ask { position: fixed; inset: 0; z-index: 20; background: rgb(0 0 0 / .45); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ask-card { background: var(--card); color: var(--ink); border-radius: 14px; padding: 18px; max-width: 420px; width: 100%; box-shadow: 0 10px 30px rgb(0 0 0 / .25); }
 .ask-card p { margin: 0 0 14px; }
+.calpick { display: grid; gap: 6px; margin: 4px 0 10px; }
+.calpick .opt { border-radius: 10px; }
+.calpick .opt.off { opacity: .55; }
+.sub { font-size: .92rem; margin: 12px 0 6px; }
+.linkbtn { background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
