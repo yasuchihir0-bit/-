@@ -7,9 +7,12 @@ let fail = 0;
 const ok = (cond, msg) => { if (!cond) { fail++; console.error('NG:', msg); } };
 
 // プリセット：日付の形式と順番（出願 → 試験 → 発表 → 手続き）
-const order = ['apply_start', 'apply_end', 'docs', 'exam', 'result', 'proc', 'pay', 'brief'];
+const order = ['apply_start', 'apply_end', 'exam', 'result', 'proc', 'pay', 'brief']; // 書類必着は出願締切より前のこともある
 for (const p of P) {
-  ok(p.id && p.name && p.source, `preset fields ${p.id}`);
+  ok(p.id && p.school && p.pref && p.url && Array.isArray(p.sources), `preset fields ${p.id}`);
+  ok(['愛知', '岐阜', '三重'].includes(p.pref) && ['共学', '男子', '女子'].includes(p.gender), `pref/gender ${p.id}`);
+  ok(p.verified === (Object.keys(p.events).length > 0 && Object.values(p.events).every((e) => !e.third)), `verified flag ${p.id}`);
+  if (p.events.docs && p.events.exam) ok(p.events.docs.date <= p.events.exam.date, `${p.id}: docs after exam`);
   for (const [t, e] of Object.entries(p.events)) {
     ok(S.TYPE[t], `${p.id}: unknown type ${t}`);
     ok(S.parseDate(e.date), `${p.id}.${t}: bad date ${e.date}`);
@@ -24,7 +27,10 @@ ok(S.daysUntil('2027-01-13', today) === 3, 'daysUntil');
 ok(S.fmtDate('2027-02-06') === '2月6日(土)', 'fmtDate ' + S.fmtDate('2027-02-06'));
 ok(S.countdown(0) === '今日' && S.countdown(1) === '明日' && S.countdown(5) === 'あと5日', 'countdown');
 
-const schools = P.map((p) => ({ ...p, events: JSON.parse(JSON.stringify(p.events)) }));
+ok(new Set(P.map((p) => p.id)).size === P.length, 'unique ids');
+ok(['tokai', 'aichi', 'shukutoku'].every((id) => P.some((p) => p.id === id)), '以前の id が残っている（更新ボタン用）');
+const pick = ['tokai', 'aichi', 'shukutoku'];
+const schools = P.filter((p) => pick.includes(p.id)).map((p) => ({ ...p, name: p.school, events: JSON.parse(JSON.stringify(p.events)) }));
 const ev = S.buildEvents(schools);
 ok(ev.every((e, i) => i === 0 || ev[i - 1].date <= e.date), 'sorted');
 const up = S.upcoming(ev, new Date(2027, 0, 25), {});
@@ -54,5 +60,5 @@ ok(ics.includes('DTSTART;VALUE=DATE:20270206') && ics.includes('DTEND;VALUE=DATE
 ok(ics.includes('TRIGGER:-PT63H') && ics.includes('TRIGGER:PT9H'), 'ics alarms');
 ok(ics.split('\r\n').every((l) => Buffer.byteLength(l) <= 75), 'ics line folding');
 
-console.log(fail ? `${fail} 件の問題` : `OK（プリセット ${P.length} 校・予定 ${ev.length} 件）`);
+console.log(fail ? `${fail} 件の問題` : `OK（${new Set(P.map((p) => p.school)).size} 校・${P.length} 回／テスト用の予定 ${ev.length} 件）`);
 process.exit(fail ? 1 : 0);

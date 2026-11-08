@@ -50,7 +50,7 @@
         <div class="ev-body">
           <div class="ev-top">${chip(e.type)}<span class="cd">${S.countdown(e.days)}</span></div>
           <div class="ev-title">${esc(e.school)}</div>
-          <div class="ev-date">${S.fmtDate(e.date, e.time)}${e.note ? ' ・ ' + esc(e.note) : ''}</div>
+          <div class="ev-date">${e.third ? '<span class="badge ng">⚠️ 未確認</span> ' : ''}${S.fmtDate(e.date, e.time)}${e.note ? ' ・ ' + esc(e.note) : ''}</div>
         </div></li>`;
     const group = (title, arr, cls = '') => (arr.length ? `<h2 class="${cls}">${title}<small>${arr.length}件</small></h2><ul class="evs">${arr.map(row).join('')}</ul>` : '');
     return `
@@ -61,7 +61,7 @@
         <div class="muted">${S.fmtDate(next.date, next.time)}</div>
       </section>` : '<section class="card"><p>これからの予定はありません。おつかれさまでした！</p></section>'}
       ${icsBanner()}
-      ${unverified().length ? `<button class="card banner ng" data-go="schools" type="button"><b>⚠️ 公式サイトで未確認の日程があります</b><div class="small">${unverified().map((x) => esc(x.name)).join('・')}：募集要項で確かめてください。</div><span class="go">確認 ›</span></button>` : ''}
+      ${unverified().length ? `<button class="card banner ng" data-go="schools" type="button"><b>⚠️ 公式で未確認・未掲載の日程があります</b><div class="small">${unverified().map((x) => esc(x.name)).join('・')}：募集要項で確かめてください。</div><span class="go">確認 ›</span></button>` : ''}
       ${st.schools.some((x) => outdated(x) && !x.edited) ? '<button class="card banner" data-go="schools" type="button"><b>🔄 日程の更新があります</b><div class="small">志望校の画面で「最新の日程に更新」を押してください。</div><span class="go">更新 ›</span></button>' : ''}
       ${conflicts.length ? `<section class="card warn"><h2>⚠️ 気をつけること</h2><ul class="notes">${conflicts.map((c) => `<li>${esc(c.text)}</li>`).join('')}</ul></section>` : ''}
       ${group('🚨 期限をすぎています', late, 'red')}
@@ -125,14 +125,22 @@
   // ---- 日程の出どころ（公式で確認ずみか） ----
   const presetOf = (sc) => (sc.presetId ? PRESETS.find((p) => p.id === sc.presetId) : null);
   const outdated = (sc) => { const p = presetOf(sc); return !!p && JSON.stringify(sc.events) !== JSON.stringify(p.events); };
+  const presetLabel = (p) => p.school + (p.round ? ' ' + p.round : '');
+  const hasThird = (events) => Object.values(events || {}).some((e) => e.third);
   function badge(sc, p = presetOf(sc)) {
     const link = p && p.url ? ` <a href="${esc(p.url)}" target="_blank" rel="noopener">公式ページ ↗</a>` : '';
     if (!p) return '<span class="badge ok">✏️ 自分で入力</span>';
     if (sc && sc.edited && outdated(sc)) return `<span class="badge ok">✏️ 自分で編集ずみ</span>${link}`;
+    if (!Object.keys(p.events).length) return `<span class="badge ng">📭 2027年度の日程は未掲載</span>${link}`;
     if (p.verified) return `<span class="badge ok">✅ 公式で確認ずみ（${S.fmtDate(p.checked).replace(/\(.\)/, '')}）</span>${link}`;
-    return `<span class="badge ng">⚠️ 公式サイト未確認</span>${link}`;
+    const all = Object.values(p.events).every((e) => e.third);
+    return `<span class="badge ng">⚠️ ${all ? '公式サイト未確認' : '一部が公式未確認'}</span>${link}`;
   }
-  const unverified = () => st.schools.filter((sc) => { const p = presetOf(sc); return p && !p.verified && !(sc.edited && outdated(sc)); });
+  const unverified = () => st.schools.filter((sc) => {
+    const p = presetOf(sc);
+    if (!p || (sc.edited && outdated(sc))) return false;
+    return hasThird(sc.events) || !Object.keys(sc.events).length;
+  });
 
   // ---- 志望校 ----
   function viewSchools() {
@@ -145,23 +153,44 @@
           <div class="small">${badge(s)}</div>
           ${outdated(s) && !s.edited ? `<button class="btn small primary" data-sync="${esc(s.id)}">🔄 最新の日程に更新</button>` : ''}
           ${outdated(s) && s.edited ? `<button class="btn small ghost" data-sync="${esc(s.id)}">リストの日程にもどす</button>` : ''}
-          <div class="small">${filled.map((t) => `<span class="pill t-${t.id}">${t.short} ${S.fmtDate(s.events[t.id].date).replace(/\(.\)/, '')}</span>`).join(' ') || '<span class="muted">日程が未登録です</span>'}</div>
-          ${S.TYPES.length - filled.length && filled.length ? `<div class="muted small">未登録：${S.TYPES.filter((t) => !filled.includes(t)).map((t) => t.label).join('・')}</div>` : ''}
+          <div class="small">${filled.map((t) => `<span class="pill t-${t.id}">${s.events[t.id].third ? '⚠️' : ''}${t.short} ${S.fmtDate(s.events[t.id].date).replace(/\(.\)/, '')}</span>`).join(' ') || '<span class="muted">日程が未登録です。公式ページで確かめて「編集」で入れてください</span>'}</div>
+          ${S.TYPES.length - filled.length && filled.length ? `<div class="muted small">未登録：${S.TYPES.filter((t) => !filled.includes(t)).map((t) => t.label).join('・')}（募集要項で確かめて「編集」で入れられます）</div>` : ''}
         </div>
         <div class="school-act"><button class="btn small" data-edit="${esc(s.id)}">編集</button><button class="btn small ghost" data-del="${esc(s.id)}">削除</button></div>
       </li>`;
     }).join('');
+    const f = st.filter || (st.filter = { pref: '', gender: '', q: '' });
+    const match = (p) => (!f.pref || p.pref === f.pref) && (!f.gender || p.gender === f.gender)
+      && (!f.q || (p.school + p.city + p.round).includes(f.q));
+    const groups = [];
+    for (const p of PRESETS.filter(match)) {
+      let g = groups.find((x) => x.school === p.school);
+      if (!g) groups.push(g = { school: p.school, first: p, rounds: [] });
+      g.rounds.push(p);
+    }
+    const chips = (key, vals) => vals.map(([v, label]) => `<button type="button" class="fchip ${f[key] === v ? 'on' : ''}" data-filter="${key}" data-val="${v}">${label}</button>`).join('');
     return `<section class="card">
-      <h2>えらんだ志望校<small>${st.schools.length}校</small></h2>
+      <h2>えらんだ志望校<small>${st.schools.length}件</small></h2>
       ${st.schools.length ? `<ul class="schools">${cards}</ul>` : '<p class="muted">まだありません。下からえらんでください。</p>'}
     </section>
     <section class="card">
-      <h2>リストからえらぶ</h2>
-      <p class="muted small"><span class="badge ok">✅ 公式で確認ずみ</span> は学校の公式サイトの募集要項で確かめた日程です。<span class="badge ng">⚠️ 公式サイト未確認</span> は、まだ公式で確かめられていない日程です。募集要項で確かめて、ちがっていたら「編集」で直してください。</p>
-      <ul class="schools">${PRESETS.map((p) => `<li class="school">
-        <div class="school-main"><b>${esc(p.name)}</b> <span class="muted small">${p.year}年 入試</span><div class="muted small">${esc(p.area)}</div><div class="small">${badge(null, p)}</div><div class="muted tiny">出典：${esc(p.source)}</div></div>
-        <div class="school-act">${chosen.has(p.id) ? '<span class="muted">✓ 追加ずみ</span>' : `<button class="btn small primary" data-add="${p.id}">＋ 追加</button>`}</div>
-      </li>`).join('')}</ul>
+      <h2>東海3県の私立中学からえらぶ<small>${new Set(PRESETS.map((p) => p.school)).size}校</small></h2>
+      <p class="muted small">2027年度入試の日程です。<span class="badge ok">✅ 公式で確認ずみ</span> は私学協会や学校の公式資料で確かめた日程、<span class="badge ng">⚠️ 未確認</span> は第三者サイトの情報です。入学手続き・納入の締切は、公式資料に無い学校が多いので、募集要項で確かめて「編集」で入れてください。</p>
+      <div class="filters">
+        <div class="fchips">${chips('pref', [['', 'すべて'], ['愛知', '愛知'], ['岐阜', '岐阜'], ['三重', '三重']])}</div>
+        <div class="fchips">${chips('gender', [['', '男女とも'], ['共学', '共学'], ['男子', '男子校'], ['女子', '女子校']])}</div>
+        <input type="search" class="search" data-q placeholder="学校名・市町村でさがす" value="${esc(f.q)}" aria-label="学校をさがす">
+      </div>
+      ${groups.length ? `<ul class="schools">${groups.map((g) => `<li class="school group">
+        <div class="school-main"><b>${esc(g.school)}</b> <span class="muted small">${esc(g.first.pref)}・${esc(g.first.city)}・${esc(g.first.gender)}</span>
+          <ul class="rounds">${g.rounds.map((p) => `<li>
+            <div class="round-main"><span>${esc(p.round || (Object.keys(p.events).length ? '一般入試' : '入試日程'))}</span>
+              ${p.events.exam ? `<span class="muted small">試験 ${S.fmtDate(p.events.exam.date)}${p.events.result ? ' → 発表 ' + S.fmtDate(p.events.result.date) : ''}</span>` : ''}
+              <div class="small">${badge(null, p)}</div>
+              <div class="muted tiny">出典：${p.sources.map((x) => esc(x.label)).join('／') || 'なし'}</div></div>
+            <div class="school-act">${chosen.has(p.id) ? '<span class="muted small">✓ 追加ずみ</span>' : `<button class="btn small primary" data-add="${p.id}">＋ 追加</button>`}</div>
+          </li>`).join('')}</ul>
+        </div></li>`).join('')}</ul>` : '<p class="muted">見つかりませんでした。</p>'}
       <button class="btn" data-new>＋ リストにない学校を自分で入力する</button>
     </section>`;
   }
@@ -249,16 +278,22 @@
     on('[data-day]', (el) => { st.selDay = st.selDay === el.dataset.day ? null : el.dataset.day; save(); render(); });
     on('[data-add]', (el) => {
       const p = PRESETS.find((x) => x.id === el.dataset.add);
-      st.schools.push({ id: p.id + '-' + Date.now().toString(36), presetId: p.id, name: p.name, area: p.area, events: clone(p.events) });
-      if (!p.verified) toast(`⚠️ ${p.name} の日程は公式サイトで未確認です。募集要項で確かめてください`);
+      st.schools.push({ id: p.id + '-' + Date.now().toString(36), presetId: p.id, name: presetLabel(p), area: `${p.pref}・${p.city}（${p.gender}）`, events: clone(p.events) });
+      if (!Object.keys(p.events).length) toast(`📭 ${p.school} の2027年度の日程は、まだ公式で見つかっていません。公式ページで確かめて「編集」で入れてください`);
+      else if (!p.verified) toast(`⚠️ ${presetLabel(p)} の日程には公式で未確認の項目があります。募集要項で確かめてください`);
       save(); render();
     });
     on('[data-new]', () => { st.editing = { id: 'c-' + Date.now().toString(36), name: '', area: '', events: {}, isNew: true }; render(); });
+    on('[data-filter]', (el) => { st.filter[el.dataset.filter] = el.dataset.val; save(); render(); });
+    on('[data-q]', (el) => {
+      st.filter.q = el.value.trim(); save();
+      clearTimeout(bind.qt); bind.qt = setTimeout(() => { render(); const q = document.querySelector('[data-q]'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 300);
+    }, 'input');
     on('[data-sync]', (el) => {
       const sc = st.schools.find((x) => x.id === el.dataset.sync);
       const p = presetOf(sc);
       if (sc.edited && !confirm(`${sc.name} の日程を、リストの日程にもどしますか？（自分で直した内容は消えます）`)) return;
-      sc.events = clone(p.events); sc.name = p.name; sc.area = p.area; delete sc.edited;
+      sc.events = clone(p.events); sc.name = presetLabel(p); sc.area = `${p.pref}・${p.city}（${p.gender}）`; delete sc.edited;
       save(); render(); toast(`${sc.name} の日程を更新しました`);
     });
     on('[data-edit]', (el) => { st.editing = clone(st.schools.find((s) => s.id === el.dataset.edit)); render(); });

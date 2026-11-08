@@ -50,7 +50,7 @@
         if (!e || !parseDate(e.date)) continue;
         out.push({
           key: eventKey(s.id, t.id), schoolId: s.id, school: s.name, type: t.id,
-          date: e.date, time: e.time || '', note: e.note || '',
+          date: e.date, time: e.time || '', note: e.note || '', third: !!e.third,
         });
       }
     }
@@ -82,7 +82,7 @@
       for (let j = 0; j < schools.length; j++) {
         if (i === j) continue;
         const a = schools[i], b = schools[j];
-        if (i < j && ev(a, 'exam') && ev(b, 'exam') && a.events.exam.date === b.events.exam.date) {
+        if (i < j && ev(a, 'exam') && ev(b, 'exam') && a.events.exam.date === b.events.exam.date && !(a.presetId && b.presetId && a.presetId.split('-')[0] === b.presetId.split('-')[0])) {
           out.push({ level: 'warn', text: `${a.name} と ${b.name} の試験日が同じ ${fmtDate(a.events.exam.date)} です。どちらを受けるか決めておきましょう。` });
         }
         // a の手続き（または納入）の締切が b の合格発表より前
