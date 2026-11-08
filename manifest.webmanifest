@@ -1,6 +1,6 @@
 {
-  "name": "東海中 理科トレーニング",
-  "short_name": "東海中理科",
+  "name": "中学受験 理科トレーニング",
+  "short_name": "受験理科",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f4f6fb",

@@ -1,7 +1,7 @@
 // 問題データのチェック: node tests/check.js
 const path = require('path');
 const load = (f) => require(path.join(__dirname, '..', 'js', f));
-['util.js', 'data/rika.js', 'data/seibutsu.js', 'data/chigaku.js', 'data/butsuri.js', 'data/kagaku.js'].forEach(load);
+['util.js', 'data/rika.js', 'data/seibutsu.js', 'data/chigaku.js', 'data/butsuri.js', 'data/kagaku.js', 'data/jissen.js'].forEach(load);
 const { RIKA, U } = globalThis;
 let fail = 0;
 const bad = (msg, q) => { fail++; if (fail < 40) console.error('NG:', msg, JSON.stringify(q).slice(0, 200)); };

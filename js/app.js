@@ -1,4 +1,4 @@
-/* 東海中 理科トレーニング：画面とロジック */
+/* 中学受験 理科トレーニング：画面とロジック */
 (function () {
   'use strict';
   const { pick, shuffle, esc, rich, parseAnswer, req, fromDecimal } = window.U;
@@ -326,7 +326,7 @@
           </div>
           <div class="hero-right">
             <div class="streak" title="続けて学習した日数">${st ? `🔥 ${st} 日連続` : '今日から始めよう'}</div>
-            <span class="chip" title="★★（標準）と★★★（東海中レベル）だけを出します">🏯 東海中レベル</span>
+            <span class="chip" title="★★（標準）と★★★（難関校レベル）だけを出します">🎯 難関校レベル</span>
           </div>
         </div>
         <div class="progress big"><i style="width:${Math.min(100, (done / G) * 100)}%"></i></div>
@@ -346,7 +346,7 @@
         </button>
         <button class="tile" style="--tc:var(--c-sci)" data-test="1">
           <span class="ic">🏆</span><span class="tt">力だめし</span>
-          <span class="ds">15 問のテスト。ふつうのテストと、東海中レベルのテスト。</span>
+          <span class="ds">15 問のテスト。ふつうのテストと、難関校レベルのテスト。</span>
         </button>
       </div>
 
@@ -425,22 +425,22 @@
       <div class="grid two">
         <button class="tile" style="--tc:var(--c-mix)" data-mix="1">
           <span class="ic">📝</span><span class="tt">ふつうのテスト</span>
-          <span class="ds">全分野から、★★（標準）と★★★（東海中レベル）を合わせて 15 問。</span>
+          <span class="ds">全分野から、★★（標準）と★★★（難関校レベル）を合わせて 15 問。</span>
         </button>
         <button class="tile" style="--tc:var(--c-sci)" data-top="1">
-          <span class="ic">🏯</span><span class="tt">東海中レベル</span>
+          <span class="ic">🎯</span><span class="tt">難関校レベル</span>
           <span class="ds">★★★（難関校レベル）が 10 問＋★★が 5 問。「すべて選ぶ」・用語を書く問題もあります。</span>
         </button>
       </div>`);
     on('[data-top]', 'click', () => {
-      // 東海中で差がつきやすい実験・観察の分野（力・電気・とけ方・水よう液・気体・天体）を多めに出す
+      // 難関校で差がつきやすい実験・観察の分野（力・電気・とけ方・水よう液・気体・天体）を多めに出す
       const focus = ['chikara', 'denki', 'tokekata', 'suiyoeki', 'kitai', 'tentai'].map((cid) => ({ sid: K.id, cid }));
       const set = buildSet(focus, 6, LEVELS.top.f);
       const seenQ = new Set(set.map(qkey));
       const more = buildSet(allTargets(), 8, LEVELS.top.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 10 - set.length);
       more.forEach((q) => seenQ.add(qkey(q)));
       const rest = buildSet(allTargets(), 10, null).filter((q) => !seenQ.has(qkey(q))).slice(0, 15 - set.length - more.length);
-      start(shuffle(set.concat(more, rest)), '東海中レベルのテスト');
+      start(shuffle(set.concat(more, rest)), '難関校レベルのテスト');
     });
     on('[data-mix]', 'click', () => start(buildSet(allTargets(), 15), 'ふつうのテスト'));
   }
@@ -490,7 +490,7 @@
         <dl class="defs">
           <dt>▶ 今日の学習</dt><dd>復習の問題を先に、足りない分を新しい問題で 10 問。いちばんおすすめ。</dd>
           <dt>📚 分野をえらぶ</dt><dd>分野を 1 つえらんで練習。<b>クイズ</b>（答えをえらぶ・書く）と<b>暗記カード</b>（思い出してからめくる）を切りかえられます。</dd>
-          <dt>🏆 力だめし</dt><dd>15 問のテスト。「東海中レベル」はむずかしい問題だけです。</dd>
+          <dt>🏆 力だめし</dt><dd>15 問のテスト。「難関校レベル」はむずかしい問題だけです。</dd>
           <dt>📊 くわしく見る</dt><dd>毎日の問題数、正答率、分野ごとの覚えぐあい、よくまちがえる問題がわかります。</dd>
         </dl>
       </div>
@@ -499,7 +499,7 @@
         <dl class="defs">
           <dt>色の帯</dt><dd>${stageLegend()}「覚えた」は 2 週間以上あけても正解できた問題、「もう少し」は数日あけて正解できた問題、「にがて」はまちがえた問題、「まだ」はまだ解いていない問題です。</dd>
           <dt><span class="lv">★★☆</span></dt><dd>標準（中学入試でよく出るレベル）</dd>
-          <dt><span class="lv">★★★</span></dt><dd>むずかしい（東海中・難関校レベル）。新しい問題の半分は ★★★ です。</dd>
+          <dt><span class="lv">★★★</span></dt><dd>むずかしい（難関校レベル）。新しい問題の半分は ★★★ です。</dd>
           <dt>すべて選ぶ</dt><dd>正しいものを<b>全部</b>選んでから「答える」を押す問題。1 つでも多かったり足りなかったりすると不正解です。</dd>
           <dt>記述</dt><dd>用語を書く問題。<b>ひらがなで書けば OK</b> です（漢字でも正解になります）。</dd>
           <dt>わからない</dt><dd>答えがわからないときに押すと、正解と解説が出ます。その問題はあとでまた出てきます。</dd>
@@ -930,7 +930,7 @@
       <div class="card">
         <div class="ch-title">むずかしさ別の正答率</div>
         ${[2, 3].map((lv) => { const L = store.lvs[lv] || { n: 0, ok: 0 }; return `<div class="stat-row"><span class="lv" style="font-size:15px">${stars(lv)}</span><span class="bar">${L.n ? `<i style="width:${pct(L.ok, L.n)}%" data-tip="${stars(lv)}：${L.ok}/${L.n} 問正解"></i>` : ''}</span><span class="pc">${L.n ? pct(L.ok, L.n) + '%' : '―'}</span></div>`; }).join('')}
-        <p class="small" style="margin:8px 0 0">★★★（東海中レベル）で 7 割をこえるのが目標です。</p>
+        <p class="small" style="margin:8px 0 0">★★★（難関校レベル）で 7 割をこえるのが目標です。</p>
       </div>
 
       <div class="card">
@@ -986,7 +986,7 @@
       const blob = new Blob([JSON.stringify(store)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `tokai-rika-kiroku-${T}.json`;
+      a.download = `rika-kiroku-${T}.json`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
       // ダウンロードできない画面（共有ページなど）のために、クリップボードにもコピーする
@@ -1021,7 +1021,7 @@
     const untouched = allM.filter((x) => !x.c.gens && x.m.new === x.m.total);
     if (untouched.length) out.push(`まだ手をつけていない分野：${untouched.map((x) => `<b>${esc(x.c.name)}</b>`).join('・')}`);
     const L3 = store.lvs[3];
-    if (L3 && L3.n >= 10 && L3.ok / L3.n < 0.7) out.push(`★★★の正答率が ${pct(L3.ok, L3.n)}% です。「力だめし」の「東海中レベル」でむずかしい問題に慣れましょう。`);
+    if (L3 && L3.n >= 10 && L3.ok / L3.n < 0.7) out.push(`★★★の正答率が ${pct(L3.ok, L3.n)}% です。「力だめし」の「難関校レベル」でむずかしい問題に慣れましょう。`);
     const d = store.days[today()];
     if (!d && streak() > 0) out.push(`今日はまだ学習していません。${streak()} 日連続の記録を続けよう！`);
     return out;
