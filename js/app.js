@@ -429,11 +429,11 @@
         </button>
         <button class="tile" style="--tc:var(--c-sci)" data-top="1">
           <span class="ic">🏯</span><span class="tt">東海中レベル</span>
-          <span class="ds">★★★（難関校レベル）が 10 問＋★★が 5 問。計算問題・「すべて選ぶ」・用語を書く問題もあります。</span>
+          <span class="ds">★★★（難関校レベル）が 10 問＋★★が 5 問。「すべて選ぶ」・用語を書く問題もあります。</span>
         </button>
       </div>`);
     on('[data-top]', 'click', () => {
-      // 東海中で差がつきやすい計算問題（力・電気・水よう液・気体）と実験・観察を多めに出す
+      // 東海中で差がつきやすい実験・観察の分野（力・電気・とけ方・水よう液・気体・天体）を多めに出す
       const focus = ['chikara', 'denki', 'tokekata', 'suiyoeki', 'kitai', 'tentai'].map((cid) => ({ sid: K.id, cid }));
       const set = buildSet(focus, 6, LEVELS.top.f);
       const seenQ = new Set(set.map(qkey));
@@ -502,7 +502,6 @@
           <dt><span class="lv">★★★</span></dt><dd>むずかしい（東海中・難関校レベル）。新しい問題の半分は ★★★ です。</dd>
           <dt>すべて選ぶ</dt><dd>正しいものを<b>全部</b>選んでから「答える」を押す問題。1 つでも多かったり足りなかったりすると不正解です。</dd>
           <dt>記述</dt><dd>用語を書く問題。<b>ひらがなで書けば OK</b> です（漢字でも正解になります）。</dd>
-          <dt>計算</dt><dd>数字で答える問題。<b>単位は書かなくても OK</b>。小数（0.5）でも分数（1/2）でもかまいません。</dd>
           <dt>わからない</dt><dd>答えがわからないときに押すと、正解と解説が出ます。その問題はあとでまた出てきます。</dd>
         </dl>
       </div>
