@@ -23,6 +23,7 @@ const DEFAULT_SUBJECTS = [
 const S = {
   subjects: [],
   intervals: srs.DEFAULT_INTERVALS,
+  pickGrid: { big: 5, small: 6 },
   problems: [],
   tests: [],
 };
@@ -45,7 +46,7 @@ const activeProblems = () => S.problems.filter((p) => !p.srs.mastered);
 const dueProblems = (subjectId) =>
   S.problems
     .filter((p) => srs.isDue(p.srs, todayStr()) && (!subjectId || p.subject === subjectId))
-    .sort((a, b) => a.srs.due.localeCompare(b.srs.due) || a.addedOn.localeCompare(b.addedOn));
+    .sort((a, b) => a.srs.due.localeCompare(b.srs.due) || a.addedOn.localeCompare(b.addedOn) || String(a.testId).localeCompare(String(b.testId)) || (a.label || '').localeCompare(b.label || '', 'ja', { numeric: true }));
 
 function toast(msg) {
   const el = document.getElementById('toast');
@@ -121,6 +122,7 @@ async function go(name, params = {}) {
 async function load() {
   S.subjects = await getSetting('subjects', DEFAULT_SUBJECTS);
   S.intervals = await getSetting('intervals', srs.DEFAULT_INTERVALS);
+  S.pickGrid = await getSetting('pickGrid', S.pickGrid);
   S.problems = await db.all('problems');
   S.tests = await db.all('tests');
 }
@@ -207,13 +209,13 @@ function renderHome() {
 
 // ---- 取りこみ
 function newImportState() {
-  return { step: 1, title: '', date: todayStr(), subject: S.subjects[0]?.id || '', answer: [], question: [], drafts: [], aiNotes: '', busy: '', saved: false };
+  return { step: 1, title: '', date: todayStr(), subject: S.subjects[0]?.id || '', answer: [], question: [], drafts: [], aiNotes: '', busy: '', saved: false, grid: { ...S.pickGrid }, picked: new Set(), pickUnit: '' };
 }
 
 function renderImport() {
   if (!importState) importState = newImportState();
   const st = importState;
-  const steps = ['テスト', '写真', 'まちがえた問題'];
+  const steps = ['テスト', '写真', 'まちがい'];
   const head = `<ol class="wizard">${steps.map((s, i) => `<li class="${st.step === i + 1 ? 'on' : st.step > i + 1 ? 'done' : ''}">${i + 1}. ${s}</li>`).join('')}</ol>`;
 
   if (st.step === 1) {
@@ -242,9 +244,10 @@ function renderImport() {
       ${pageList('answer', '① 採点済みの解答用紙', '○×がついた解答用紙です。カメラでとるか、写真をえらんでください（何枚でも）。')}
       ${pageList('question', '② 問題用紙', 'まちがえた問題がのっているページだけで大丈夫です。')}
       ${st.busy ? `<p class="busy">${esc(st.busy)}</p>` : ''}
+      <p class="muted small">写真がなくても、問題番号だけで登録できます（解き直しのときはテストの紙を見て解きます）。</p>
       <div class="row between">
         <button class="btn" data-act="impStep" data-step="1">← もどる</button>
-        <button class="btn primary" data-act="impStep" data-step="3" ${st.answer.length || st.question.length ? '' : 'disabled'}>次へ →</button>
+        <button class="btn primary" data-act="impStep" data-step="3">${st.answer.length || st.question.length ? '次へ →' : '写真なしで次へ →'}</button>
       </div>`;
     return;
   }
@@ -252,11 +255,12 @@ function renderImport() {
   // step 3
   const hasKey = !!getApiKey() && !EMBEDDED;
   app.innerHTML = `${head}
+    ${pickPanel(st)}
     <section class="card">
-      <h2>まちがえた問題を登録</h2>
-      <p class="muted small">問題ごとに「問題を切り抜く」「解答を切り抜く」で写真の中をかこみ、単元をえらびます。</p>
+      <h2>ほかの登録のしかた</h2>
+      <p class="muted small">番号の表にない問題は、1 問ずつ追加できます。</p>
       <div class="row wrap">
-        <button class="btn" data-act="impAddDraft">＋ 問題を追加</button>
+        <button class="btn" data-act="impAddDraft">＋ 1 問ずつ追加</button>
         ${hasKey
           ? `<button class="btn accent" data-act="impAnalyze" ${st.busy || !st.answer.length ? 'disabled' : ''}>✨ AI でまちがいを読み取る</button>`
           : EMBEDDED ? '' : `<span class="muted small">設定で API キーを入れると、AI でまちがえた問題を自動で読み取れます。</span>`}
@@ -285,16 +289,60 @@ function draftCard(d, i, { subject = importState?.subject, editing = false } = {
         <label>問題番号<input ${attr} data-f="label" value="${esc(d.label)}" placeholder="例：大問2 (3)"></label>
         <label>単元<select ${attr} data-f="unit">${unitOptions(subject, d.unit)}</select></label>
       </div>
-      <div class="crops">${crop('q', '問題')}${crop('a', '解答')}</div>
       <fieldset class="reasons"><legend>まちがえた理由</legend>
         ${Object.entries(REASONS).map(([k, v]) => `<label class="pill"><input type="radio" name="reason-${i}" value="${k}" ${attr} data-f="reason" ${d.reason === k ? 'checked' : ''}>${v}</label>`).join('')}
       </fieldset>
+      <details class="more" ${attr} ${d.open !== false || editing ? 'open' : ''}>
+      <summary>写真の切り抜き・答え・メモ <span class="muted small">（あとからでも入れられます）</span></summary>
+      <div class="crops">${crop('q', '問題')}${crop('a', '解答')}</div>
       <div class="grid2">
         <label>自分の答え<input ${attr} data-f="myAnswer" value="${esc(d.myAnswer)}"></label>
         <label>正しい答え<input ${attr} data-f="correctAnswer" value="${esc(d.correctAnswer)}"></label>
       </div>
       <label>問題のメモ（写真がないときは問題文を書く）<textarea ${attr} data-f="questionText" rows="2">${esc(d.questionText)}</textarea></label>
       <label>解き方のポイント・次に気をつけること<textarea ${attr} data-f="memo" rows="2">${esc(d.memo)}</textarea></label>
+      </details>
+    </section>`;
+}
+
+// ---- 問題番号の表から、まちがえた番号をタップで選ぶ
+function gridLabels(grid) {
+  const rows = [];
+  for (let b = 1; b <= grid.big; b++) {
+    if (grid.small >= 2) {
+      const row = [];
+      for (let k = 1; k <= grid.small; k++) row.push({ label: `大問${b} (${k})`, text: `(${k})` });
+      rows.push({ head: `大問${b}`, items: row });
+    } else {
+      rows.push({ head: '', items: [{ label: `問${b}`, text: `${b}` }] });
+    }
+  }
+  // 小問がないときは 1 行にまとめる
+  return grid.small >= 2 ? rows : [{ head: '問', items: rows.flatMap((r) => r.items) }];
+}
+
+function pickPanel(st) {
+  const added = new Set(st.drafts.map((d) => d.label));
+  const n = [...st.picked].filter((l) => !added.has(l)).length;
+  return `
+    <section class="card pick">
+      <h2>まちがえた番号をタップ</h2>
+      <p class="muted small">× や減点の問題の番号をタップして、まとめて追加します。写真の切り抜きはあとからでもかまいません。</p>
+      <div class="row wrap">
+        <label class="inline">大問の数<input type="number" min="1" max="20" inputmode="numeric" id="gridBig" data-grid="big" value="${st.grid.big}"></label>
+        <label class="inline">小問の数<input type="number" min="0" max="20" inputmode="numeric" id="gridSmall" data-grid="small" value="${st.grid.small}"></label>
+      </div>
+      <p class="muted small">小問がないテストは、小問の数を 0 にしてください（問1、問2… になります）。</p>
+      <div class="pickgrid">
+        ${gridLabels(st.grid).map((r) => `
+          <div class="pickrow">${r.head ? `<span class="pickhead">${esc(r.head)}</span>` : ''}<div class="pickbtns">
+            ${r.items.map((it) => added.has(it.label)
+              ? `<button type="button" class="pickbtn added" disabled aria-label="${esc(it.label)}（追加ずみ）">${esc(it.text)}</button>`
+              : `<button type="button" class="pickbtn ${st.picked.has(it.label) ? 'on' : ''}" data-act="pickToggle" data-label="${esc(it.label)}" aria-pressed="${st.picked.has(it.label)}" aria-label="${esc(it.label)}">${esc(it.text)}</button>`).join('')}
+          </div></div>`).join('')}
+      </div>
+      <label class="inline">単元（まとめて）<select id="pickUnit" data-imp="pickUnit">${unitOptions(st.subject, st.pickUnit).replace('（単元をえらぶ）', '（あとで選ぶ）').replace('<option value="__new">＋ 新しい単元…</option>', '')}</select></label>
+      <div class="row end"><button class="btn primary" data-act="pickAdd" ${n ? '' : 'disabled'}>選んだ ${n} 問を追加</button></div>
     </section>`;
 }
 
@@ -420,6 +468,17 @@ async function saveImport() {
   }
 }
 
+// 切り抜きがない問題：テストの紙を見るよう案内し、写真があればページごと開けるようにする
+function noCropHint(p, t, kind) {
+  const pages = (kind === 'q' ? t?.questionPages : t?.answerPages) || [];
+  const name = kind === 'q' ? '問題用紙' : '解答用紙';
+  const msg = kind === 'q'
+    ? `<p class="paperhint">📄 ${esc(t?.title || 'テスト')} の<b>${esc(p.label || 'この問題')}</b>を、テストの紙を見て解いてください。</p>`
+    : '';
+  const btns = pages.map((id, i) => `<button class="btn small" data-act="zoom" data-id="${id}">${name} ${i + 1}枚目を見る</button>`).join('');
+  return msg + (btns ? `<div class="row wrap">${btns}</div>` : '');
+}
+
 // ---- 解き直し
 function startReview({ subject, ids, practice = false } = {}) {
   const list = ids ? ids.map((id) => S.problems.find((p) => p.id === id)).filter(Boolean) : dueProblems(subject);
@@ -463,7 +522,7 @@ function renderReview() {
       <div class="row wrap">${chip(p.subject)}<span class="tag">${esc(p.unit || '単元なし')}</span><span class="tag">${esc(srs.stageLabel(p.srs, S.intervals))}</span></div>
       <h2>${esc(p.label || '問題')}</h2>
       <p class="muted small">${esc(t ? `${t.title}（${fmtDate(t.date)}）` : '')}・前に解いてから ${days} 日</p>
-      ${p.questionImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.questionImg}"><img data-img="${p.questionImg}" alt="問題"></button>` : ''}
+      ${p.questionImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.questionImg}"><img data-img="${p.questionImg}" alt="問題"></button>` : noCropHint(p, t, 'q')}
       ${p.questionText ? `<p class="qtext">${esc(p.questionText)}</p>` : ''}
     </section>
     ${session.revealed ? `
@@ -475,7 +534,7 @@ function renderReview() {
           <dt>まちがえた理由</dt><dd>${esc(REASONS[p.reason] || '')}</dd>
           ${p.memo ? `<dt>ポイント</dt><dd>${esc(p.memo)}</dd>` : ''}
         </dl>
-        ${p.answerImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.answerImg}"><img data-img="${p.answerImg}" alt="採点済みの解答"></button>` : ''}
+        ${p.answerImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.answerImg}"><img data-img="${p.answerImg}" alt="採点済みの解答"></button>` : noCropHint(p, t, 'a')}
       </section>
       <div class="grades">${btn('again')}${btn('hard')}${btn('good')}</div>
       <p class="muted small center">キーボード：1・2・3 で評価</p>`
@@ -510,6 +569,7 @@ function renderList() {
   if (f.state === 'active') list = list.filter((p) => !p.srs.mastered);
   if (f.state === 'due') list = list.filter((p) => srs.isDue(p.srs, t));
   if (f.state === 'mastered') list = list.filter((p) => p.srs.mastered);
+  list.sort((a, b) => (testOf(b.testId)?.date || '').localeCompare(testOf(a.testId)?.date || '') || (a.label || '').localeCompare(b.label || '', 'ja', { numeric: true }));
   const groups = new Map();
   for (const p of list) {
     const k = `${p.subject}\u0000${p.unit || '単元なし'}`;
@@ -594,7 +654,7 @@ function renderDetail() {
       <div class="row wrap">${chip(p.subject)}<span class="tag">${esc(p.unit || '単元なし')}</span><span class="tag">${esc(REASONS[p.reason] || '')}</span></div>
       <h1>${esc(p.label || '問題')}</h1>
       <p class="muted small">${esc(t ? `${t.title}（${fmtDate(t.date)}）` : '')}</p>
-      ${p.questionImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.questionImg}"><img data-img="${p.questionImg}" alt="問題"></button>` : ''}
+      ${p.questionImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.questionImg}"><img data-img="${p.questionImg}" alt="問題"></button>` : noCropHint(p, t, 'q')}
       ${p.questionText ? `<p class="qtext">${esc(p.questionText)}</p>` : ''}
       <details><summary>答えを見る</summary>
         <dl class="kv">
@@ -602,7 +662,7 @@ function renderDetail() {
           ${p.myAnswer ? `<dt>テストでの答え</dt><dd class="ng">${esc(p.myAnswer)}</dd>` : ''}
           ${p.memo ? `<dt>ポイント</dt><dd>${esc(p.memo)}</dd>` : ''}
         </dl>
-        ${p.answerImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.answerImg}"><img data-img="${p.answerImg}" alt="採点済みの解答"></button>` : ''}
+        ${p.answerImg ? `<button class="imgbtn" data-act="zoom" data-id="${p.answerImg}"><img data-img="${p.answerImg}" alt="採点済みの解答"></button>` : noCropHint(p, t, 'a')}
       </details>
     </section>
     <section class="card">
@@ -862,6 +922,29 @@ const actions = {
     for (const d of importState.drafts) if (d[kind].page >= list.length) { d[kind].page = -1; d[kind].url = null; }
     render();
   },
+  pickToggle: (el) => {
+    const st = importState;
+    const l = el.dataset.label;
+    if (st.picked.has(l)) st.picked.delete(l); else st.picked.add(l);
+    el.classList.toggle('on', st.picked.has(l));
+    el.setAttribute('aria-pressed', st.picked.has(l));
+    const added = new Set(st.drafts.map((d) => d.label));
+    const n = [...st.picked].filter((x) => !added.has(x)).length;
+    const btn = app.querySelector('[data-act=pickAdd]');
+    btn.textContent = `選んだ ${n} 問を追加`;
+    btn.disabled = !n;
+  },
+  pickAdd: () => {
+    const st = importState;
+    const added = new Set(st.drafts.map((d) => d.label));
+    // 表の順番どおりに追加する
+    const order = gridLabels(st.grid).flatMap((r) => r.items.map((it) => it.label));
+    const labels = order.filter((l) => st.picked.has(l) && !added.has(l));
+    for (const l of labels) st.drafts.push(newDraft({ label: l, unit: st.pickUnit, open: false }));
+    st.picked.clear();
+    render();
+    toast(`${labels.length} 問を追加しました。単元と理由をえらんで保存してください。`);
+  },
   impAddDraft: () => {
     importState.drafts.push(newDraft({ a: { page: -1, box: null, url: null }, q: { page: -1, box: null, url: null } }));
     render();
@@ -997,12 +1080,30 @@ document.addEventListener('change', async (e) => {
   handleField(el);
 });
 document.addEventListener('input', (e) => handleField(e.target));
+// 番号の表の大きさを変えたら表を作り直す（入力中ではなく確定したとき）
+document.addEventListener('change', (e) => { if (e.target.dataset.grid && view.name === 'import') render(); });
+// 下書きの「くわしく」の開け閉めを覚えておく
+document.addEventListener('toggle', (e) => {
+  const el = e.target;
+  if (el.matches?.('details.more[data-draft]') && view.name === 'import') {
+    const d = importState?.drafts[Number(el.dataset.draft)];
+    if (d) d.open = el.open;
+  }
+}, true);
 
 function draftFor(el) {
   return view.name === 'edit' ? view.draft : importState?.drafts[Number(el.dataset.draft)];
 }
 
 function handleField(el) {
+  if (el.dataset.grid && importState) {
+    const v = Math.min(20, Math.max(el.dataset.grid === 'big' ? 1 : 0, Math.round(Number(el.value)) || 0));
+    if (el.type === 'number' && el.value === '') return;
+    importState.grid[el.dataset.grid] = v;
+    S.pickGrid = { ...importState.grid };
+    setSetting('pickGrid', S.pickGrid);
+    return;
+  }
   if (el.dataset.imp && importState) { importState[el.dataset.imp] = el.value; return; }
   if (el.dataset.f && el.dataset.draft != null) {
     const d = draftFor(el);

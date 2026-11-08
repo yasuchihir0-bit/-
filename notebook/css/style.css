@@ -238,3 +238,19 @@ details summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
 .small-dialog { width: min(92vw, 420px); }
 .ask p { margin: 4px 0 12px; white-space: pre-wrap; }
 .btn.danger-fill { background: var(--ng); color: #fff; border-color: var(--ng); }
+
+/* 番号をタップで選ぶ */
+.pick input[type=number] { width: 4.5em; display: inline-block; margin: 0; }
+.pickgrid { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.pickrow { display: flex; align-items: flex-start; gap: 8px; }
+.pickhead { flex: none; width: 3.6em; font-size: .86rem; color: var(--muted); padding-top: 9px; }
+.pickbtns { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.pickbtn {
+  min-width: 44px; height: 40px; padding: 0 8px; font: inherit; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+}
+.pickbtn.on { background: var(--ng-bg); border-color: var(--ng); color: var(--ng); }
+.pickbtn.on::before { content: "× "; }
+.pickbtn.added { opacity: .5; text-decoration: line-through; cursor: default; }
+details.more { border-top: 1px solid var(--line); margin-top: 6px; }
+.paperhint { background: var(--bg); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
