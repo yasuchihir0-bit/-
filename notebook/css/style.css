@@ -148,7 +148,6 @@ details summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
 .thumbs figure { margin: 0; }
 .thumbs img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
 .thumbs figcaption { font-size: .78rem; color: var(--muted); display: flex; justify-content: space-between; }
-.addphoto { display: flex; align-items: center; justify-content: center; aspect-ratio: 3 / 4; border: 2px dashed var(--line); border-radius: 8px; color: var(--accent); font-weight: 700; cursor: pointer; text-align: center; padding: 8px; }
 
 .busy { color: var(--ai); font-weight: 600; }
 .busy::before { content: "⏳ "; }
@@ -254,3 +253,5 @@ details summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
 .pickbtn.added { opacity: .5; text-decoration: line-through; cursor: default; }
 details.more { border-top: 1px solid var(--line); margin-top: 6px; }
 .paperhint { background: var(--bg); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.photo-actions .btn { flex: 1 1 10em; }
+[hidden] { display: none !important; }

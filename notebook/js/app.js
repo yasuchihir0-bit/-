@@ -237,17 +237,20 @@ function renderImport() {
         <p class="muted small">${hint}</p>
         <div class="thumbs">
           ${st[kind].map((p, i) => `<figure><img src="${p.url}" alt="${label} ${i + 1}枚目"><figcaption>${i + 1}枚目 <button class="link" data-act="impRemovePage" data-kind="${kind}" data-i="${i}">削除</button></figcaption></figure>`).join('')}
-          <label class="addphoto">＋ 写真を追加<input type="file" accept="image/*" multiple data-act-change="impAddPages" data-kind="${kind}" hidden></label>
+        </div>
+        <div class="row wrap photo-actions">
+          <label class="btn primary">📷 撮影する<input type="file" accept="image/*" capture="environment" data-act-change="impAddPages" data-kind="${kind}" hidden></label>
+          <label class="btn">🖼 写真を読み込む<input type="file" accept="image/*" multiple data-act-change="impAddPages" data-kind="${kind}" hidden></label>
         </div>
       </section>`;
     app.innerHTML = `${head}
-      ${pageList('answer', '① 採点済みの解答用紙', '○×がついた解答用紙です。カメラでとるか、写真をえらんでください（何枚でも）。')}
+      ${pageList('answer', '① 採点済みの解答用紙', '○×がついた解答用紙です。撮影するか、とってある写真を読み込んでください（何枚でも）。')}
       ${pageList('question', '② 問題用紙', 'まちがえた問題がのっているページだけで大丈夫です。')}
       ${st.busy ? `<p class="busy">${esc(st.busy)}</p>` : ''}
-      <p class="muted small">写真がなくても、問題番号だけで登録できます（解き直しのときはテストの紙を見て解きます）。</p>
+      ${st.answer.length || st.question.length ? '' : `<p class="muted small">問題用紙か解答用紙の写真を 1 枚以上入れると、次へ進めます。</p>`}
       <div class="row between">
         <button class="btn" data-act="impStep" data-step="1">← もどる</button>
-        <button class="btn primary" data-act="impStep" data-step="3">${st.answer.length || st.question.length ? '次へ →' : '写真なしで次へ →'}</button>
+        <button class="btn primary" data-act="impStep" data-step="3" ${st.answer.length || st.question.length ? '' : 'disabled'}>次へ →</button>
       </div>`;
     return;
   }
@@ -256,18 +259,16 @@ function renderImport() {
   const hasKey = !!getApiKey() && !EMBEDDED;
   app.innerHTML = `${head}
     ${pickPanel(st)}
+    ${EMBEDDED ? '' : `
     <section class="card">
-      <h2>ほかの登録のしかた</h2>
-      <p class="muted small">番号の表にない問題は、1 問ずつ追加できます。</p>
-      <div class="row wrap">
-        <button class="btn" data-act="impAddDraft">＋ 1 問ずつ追加</button>
-        ${hasKey
-          ? `<button class="btn accent" data-act="impAnalyze" ${st.busy || !st.answer.length ? 'disabled' : ''}>✨ AI でまちがいを読み取る</button>`
-          : EMBEDDED ? '' : `<span class="muted small">設定で API キーを入れると、AI でまちがえた問題を自動で読み取れます。</span>`}
-      </div>
+      <h2>AI で読み取る</h2>
+      ${hasKey
+        ? `<p class="muted small">番号をタップするかわりに、写真から × の問題を AI に見つけてもらうこともできます。</p>
+           <button class="btn accent" data-act="impAnalyze" ${st.busy || !st.answer.length ? 'disabled' : ''}>✨ AI でまちがいを読み取る</button>`
+        : `<p class="muted small">設定で API キーを入れると、写真から × の問題を AI で読み取れます。</p>`}
       ${st.busy ? `<p class="busy">${esc(st.busy)}</p>` : ''}
       ${st.aiNotes ? `<p class="note">AI のメモ：${esc(st.aiNotes)}</p>` : ''}
-    </section>
+    </section>`}
     ${st.drafts.map((d, i) => draftCard(d, i)).join('')}
     <div class="row between">
       <button class="btn" data-act="impStep" data-step="2">← 写真にもどる</button>
@@ -944,11 +945,6 @@ const actions = {
     st.picked.clear();
     render();
     toast(`${labels.length} 問を追加しました。単元と理由をえらんで保存してください。`);
-  },
-  impAddDraft: () => {
-    importState.drafts.push(newDraft({ a: { page: -1, box: null, url: null }, q: { page: -1, box: null, url: null } }));
-    render();
-    app.querySelector('.draft:last-of-type')?.scrollIntoView({ behavior: 'smooth' });
   },
   impRemoveDraft: (el) => { importState.drafts.splice(Number(el.dataset.draft), 1); render(); },
   impSave: () => saveImport(),
