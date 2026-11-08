@@ -34,8 +34,47 @@
   let store = blank();
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) store = Object.assign(blank(), JSON.parse(raw));
+    if (raw) store = sanitize(JSON.parse(raw));
   } catch (e) { /* 保存できない環境でも動くようにする */ }
+  /* 保存データ・読みこんだファイルを、決まった形の安全なデータだけに整える
+     （細工されたファイルを読みこんでも、画面に HTML が入りこんだり、止まったりしないように） */
+  function sanitize(d) {
+    const out = blank();
+    if (!d || typeof d !== 'object') return out;
+    const int = (v, max = 1e7) => (Number.isFinite(+v) ? Math.max(0, Math.min(max, Math.floor(+v))) : 0);
+    const isDate = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const str = (v, max = 2000) => (typeof v === 'string' ? v.slice(0, max) : '');
+    const strs = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string').slice(0, 8).map((x) => x.slice(0, 500)) : undefined);
+    const cats = new Set(K.cats.map((c) => c.id));
+    const obj = (v) => (v && typeof v === 'object' ? v : {});
+    Object.entries(obj(d.stats)).forEach(([k, v]) => {
+      const m = /^([a-z]+):([a-z]+)$/.exec(k);
+      if (m && m[1] === K.id && cats.has(m[2])) out.stats[k] = { n: int(v && v.n), ok: int(v && v.ok) };
+    });
+    Object.entries(obj(d.cards)).forEach(([k, c]) => {
+      if (typeof k !== 'string' || k.length > 3000 || !c || !cats.has(c.cat)) return;
+      const card = { box: int(c.box, 5), due: isDate(c.due) ? c.due : today(), n: int(c.n), ok: int(c.ok), lapses: int(c.lapses), cat: c.cat, lv: Math.max(1, int(c.lv, 3)) };
+      if (isDate(c.last)) card.last = c.last;
+      const sn = c.snap;
+      if (sn && typeof sn === 'object' && cats.has(sn.cat) && ['choice', 'text', 'multi'].includes(sn.type)) {
+        card.snap = { subject: K.id, cat: sn.cat, type: sn.type, q: str(sn.q), ans: str(sn.ans), exp: str(sn.exp), lv: card.lv };
+        ['choices', 'accept', 'correct'].forEach((f) => { const a = strs(sn[f]); if (a) card.snap[f] = a; });
+        if ((sn.type === 'choice' || sn.type === 'multi') && !(card.snap.choices && card.snap.choices.length)) delete card.snap;
+        if (sn.type === 'text' && !(card.snap.accept && card.snap.accept.length)) delete card.snap;
+        if (sn.type === 'multi' && !card.snap.correct) delete card.snap;
+      }
+      out.cards[k] = card;
+    });
+    Object.entries(obj(d.days)).forEach(([k, v]) => {
+      if (isDate(k) && v) out.days[k] = { n: int(v.n), ok: int(v.ok), sec: int(v.sec), cards: int(v.cards) };
+    });
+    ['1', '2', '3'].forEach((k) => { const v = obj(d.lvs)[k]; if (v) out.lvs[k] = { n: int(v.n), ok: int(v.ok) }; });
+    out.sessions = int(d.sessions);
+    if ([10, 20, 30, 50].includes(+d.goal)) out.goal = +d.goal;
+    if (d.seenGuide === true) out.seenGuide = true;
+    if (Array.isArray(d.wrong)) out.wrong = d.wrong.filter((q) => q && typeof q === 'object' && cats.has(q.cat) && typeof q.q === 'string');
+    return out;
+  }
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* noop */ } };
 
   /* 旧バージョンの「まちがえた問題」を復習カードに引き継ぐ */
@@ -328,7 +367,8 @@
         ${stageLegend()}
         <p class="small" style="margin:4px 0 0">覚えた <b>${all.master}</b>・もう少し <b>${all.fixed}</b>・にがて <b>${all.learn}</b>・まだ <b>${all.new}</b></p>
       </div>
-      <p class="small center"><button class="linkbtn" data-help="1" type="button">❓ 使い方を見る</button></p>`);
+      <p class="small center"><button class="linkbtn" data-help="1" type="button">❓ 使い方を見る</button></p>
+      <p class="small center notice">このアプリは東海中学校の公式のものではありません。学校とは関係のない、受験勉強用の非公式アプリです。</p>`);
     on('[data-daily]', 'click', startDaily);
     on('[data-pick]', 'click', () => practice('quiz'));
     on('[data-test]', 'click', tests);
@@ -489,6 +529,14 @@
           ${[10, 20, 30, 50].map((n) => `<button type="button" data-goal="${n}" aria-pressed="${n === goal()}">${n} 問</button>`).join('')}
         </div>
         <p class="small" style="margin:8px 0 0">記録はこの端末のブラウザに保存されます。別の端末に移すときは 📊 のページの「記録を書き出す」を使ってください。</p>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">このアプリについて</h2>
+        <ul class="steps" style="padding-left:1.2em">
+          <li>東海中学校の<b>公式のアプリではありません</b>。学校とは関係のない、受験勉強用の非公式アプリです。出題の傾向やむずかしさは、公開されている情報をもとにした目安です。</li>
+          <li>問題文・例文・解説はこのアプリのために作ったものです。まちがいがないよう注意していますが、言葉の意味や使い方は辞書によって説明が少しちがうことがあります。気になるところは辞書や学校・塾の教材でも確かめてください。</li>
+          <li>学習の記録は、この端末のブラウザの中にだけ保存されます。名前などの個人情報を入力する場所はなく、記録をインターネットに送ることもありません。</li>
+        </ul>
       </div>
       <div class="row"><button class="btn sub" id="again" type="button">はじめての案内をもう一度見る</button>
       <button class="btn" id="back" type="button">ホームへ</button></div>`);
@@ -965,7 +1013,7 @@
         const data = JSON.parse(txt);
         if (!data || typeof data !== 'object' || !data.stats || !data.cards) throw new Error('format');
         if (!confirm('今の記録を、読みこんだ記録で置きかえます。よろしいですか？')) return;
-        store = Object.assign(blank(), data); save(); analysis();
+        store = sanitize(data); store.seenGuide = true; save(); analysis();
       }).catch(() => alert('このファイルは読みこめませんでした。'));
     });
   }

@@ -318,3 +318,4 @@ h2 { font-size: 20px; margin: 20px 0 10px; }
 #submitMulti { margin-top: 6px; }
 .hero-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .chip { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+.notice { margin-top: 18px; color: var(--muted); font-size: 12px; }
