@@ -1,10 +1,10 @@
 {
-  "name": "東海中 国語トレーニング",
-  "short_name": "東海中国語",
+  "name": "東海中 理科トレーニング",
+  "short_name": "東海中理科",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f4f6fb",
-  "theme_color": "#1f6feb",
+  "theme_color": "#138a72",
   "lang": "ja",
   "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
 }
