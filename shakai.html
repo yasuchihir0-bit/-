@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#c05b12">
+  <meta name="description" content="東海中学の受験対策用 社会（地理・歴史・公民）の問題練習アプリ（学校とは関係のない非公式アプリ）">
+  <title>東海中 社会トレーニング</title>
+  <link rel="manifest" href="shakai.webmanifest">
+  <link rel="icon" href="icon-shakai.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="home-btn" id="homeBtn" type="button" aria-label="ホームへ">🏠 東海中 社会トレーニング</button>
+    <span class="top-actions">
+      <button class="icon-btn" id="statsBtn" type="button" aria-label="学習の記録">📊<span>記録</span></button>
+      <button class="icon-btn" id="helpBtn" type="button" aria-label="使い方">❓<span>使い方</span></button>
+    </span>
+  </header>
+
+  <main id="app" class="container" aria-live="polite"></main>
+
+  <script src="js/util.js"></script>
+  <script src="js/data/shakai.js"></script>
+  <script src="js/data/shakai2.js"></script>
+  <script src="js/data/shakai3.js"></script>
+  <script>window.SUBJECT = window.SHAKAI;</script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

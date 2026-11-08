@@ -1,12 +1,23 @@
-/* 東海中 国語トレーニング：画面とロジック */
+/* 東海中 トレーニング（国語・社会 共通）：画面とロジック
+ * 教科のデータは window.SUBJECT（なければ window.KOKUGO）。教科ごとのちがいは SUBJECT.app で設定する。 */
 (function () {
   'use strict';
   const { pick, shuffle, esc, rich } = window.U;
   const Charts = window.Charts;
 
-  const SUBJECTS = [window.KOKUGO];
+  const SUBJECTS = [window.SUBJECT || window.KOKUGO];
   const SUBJ = Object.fromEntries(SUBJECTS.map((s) => [s.id, s]));
   const K = SUBJECTS[0];
+  /* 教科ごとの設定（書いていないものは国語の値） */
+  const APP = Object.assign({
+    key: 'tokai-kokugo-v1',
+    file: 'tokai-kokugo-kiroku',
+    pickDesc: 'ことわざ・敬語・文法など、苦手な分野をクイズや暗記カードで集中練習。',
+    topFocus: ['shinjo', 'hyoron', 'tsukai', 'kanyo', 'bunpo'],
+    textHint: '記述式：ひらがなで書けば OK です。',
+    contentNote: '問題文・例文・解説はこのアプリのために作ったものです。まちがいがないよう注意していますが、言葉の意味や使い方は辞書によって説明が少しちがうことがあります。気になるところは辞書や学校・塾の教材でも確かめてください。',
+    links: [],
+  }, K.app || {});
   const $app = document.getElementById('app');
 
   /* ───────── 日付 ───────── */
@@ -29,7 +40,7 @@
   }));
 
   /* ───────── 保存（この端末のブラウザ内のみ） ───────── */
-  const KEY = 'tokai-kokugo-v1';
+  const KEY = APP.key;
   const blank = () => ({ version: 2, stats: {}, cards: {}, days: {}, lvs: {}, sessions: 0 });
   let store = blank();
   try {
@@ -249,7 +260,8 @@
     const cat = catOf(K.id, cid);
     const r = { total: 0, new: 0, learn: 0, fixed: 0, master: 0 };
     if (cat.gens) {
-      const pairs = K.ANTONYMS.length + K.SYNONYMS.length; // 1 組を 1 問として数える
+      // 自動で出題する分野は、もとになる組の数を問題数として数える
+      const pairs = cat.size ? cat.size() : K.ANTONYMS.length + K.SYNONYMS.length;
       r.total = pairs;
       Object.values(store.cards).filter((c) => c.cat === cid).forEach((c) => { r[stageOf(c)]++; });
       const seen = r.learn + r.fixed + r.master;
@@ -350,9 +362,9 @@
       <div class="grid two">
         <button class="tile" style="--tc:var(--accent)" data-pick="1">
           <span class="ic">📚</span><span class="tt">分野をえらぶ</span>
-          <span class="ds">ことわざ・敬語・文法など、苦手な分野をクイズや暗記カードで集中練習。</span>
+          <span class="ds">${esc(APP.pickDesc)}</span>
         </button>
-        <button class="tile" style="--tc:var(--c-koku)" data-test="1">
+        <button class="tile" style="--tc:${K.color}" data-test="1">
           <span class="ic">🏆</span><span class="tt">力だめし</span>
           <span class="ds">15 問のテスト。ふつうのテストと、東海中レベルのテスト。</span>
         </button>
@@ -368,6 +380,7 @@
         <p class="small" style="margin:4px 0 0">覚えた <b>${all.master}</b>・もう少し <b>${all.fixed}</b>・にがて <b>${all.learn}</b>・まだ <b>${all.new}</b></p>
       </div>
       <p class="small center"><button class="linkbtn" data-help="1" type="button">❓ 使い方を見る</button></p>
+      ${APP.links.length ? `<p class="small center">ほかの教科：${APP.links.map((l) => `<a class="linkbtn" href="${esc(l.href)}">${esc(l.label)}</a>`).join('・')}</p>` : ''}
       <p class="small center notice">このアプリは東海中学校の公式のものではありません。学校とは関係のない、受験勉強用の非公式アプリです。</p>`);
     on('[data-daily]', 'click', startDaily);
     on('[data-pick]', 'click', () => practice('quiz'));
@@ -436,14 +449,14 @@
           <span class="ic">📝</span><span class="tt">ふつうのテスト</span>
           <span class="ds">全分野から、★★（標準）と★★★（東海中レベル）を合わせて 15 問。</span>
         </button>
-        <button class="tile" style="--tc:var(--c-koku)" data-top="1">
+        <button class="tile" style="--tc:${K.color}" data-top="1">
           <span class="ic">🏯</span><span class="tt">東海中レベル</span>
           <span class="ds">★★★（難関校レベル）が 10 問＋★★が 5 問。「すべて選ぶ」「答えを書く」問題もあります。</span>
         </button>
       </div>`);
     on('[data-top]', 'click', () => {
-      // 文章読解で使う「気持ち」「説明文の言葉」「使い方」「慣用句」「文法」を多めに出す
-      const focus = ['shinjo', 'hyoron', 'tsukai', 'kanyo', 'bunpo'].map((cid) => ({ sid: K.id, cid }));
+      // 東海中でよく問われる分野を多めに出す（国語：気持ち・説明文の言葉・使い方・慣用句・文法）
+      const focus = APP.topFocus.map((cid) => ({ sid: K.id, cid }));
       const set = buildSet(focus, 6, LEVELS.top.f);
       const seenQ = new Set(set.map(qkey));
       const more = buildSet(allTargets(), 8, LEVELS.top.f).filter((q) => !seenQ.has(qkey(q))).slice(0, 10 - set.length);
@@ -534,7 +547,7 @@
         <h2 style="margin-top:0">このアプリについて</h2>
         <ul class="steps" style="padding-left:1.2em">
           <li>東海中学校の<b>公式のアプリではありません</b>。学校とは関係のない、受験勉強用の非公式アプリです。出題の傾向やむずかしさは、公開されている情報をもとにした目安です。</li>
-          <li>問題文・例文・解説はこのアプリのために作ったものです。まちがいがないよう注意していますが、言葉の意味や使い方は辞書によって説明が少しちがうことがあります。気になるところは辞書や学校・塾の教材でも確かめてください。</li>
+          <li>${APP.contentNote}</li>
           <li>学習の記録は、この端末のブラウザの中にだけ保存されます。名前などの個人情報を入力する場所はなく、記録をインターネットに送ることもありません。</li>
         </ul>
       </div>
@@ -627,7 +640,7 @@
           <button class="btn" id="submitText" type="button">答える</button>
         </div>
         <div class="err" id="err"></div>
-        <div class="hint">記述式：ひらがなで書けば OK です。</div>`
+        <div class="hint">${esc(APP.textHint)}</div>`
       : q.type === 'multi'
       ? `<div class="multi-note">✅ あてはまるものを<b>すべて</b>選んでから「答える」を押してください。</div>
         <div class="choices">${q.choices.map((c, i) => `<button class="choice mchoice" type="button" data-i="${i}" aria-pressed="false"><span class="no">${i + 1}</span><span>${rich(c)}</span></button>`).join('')}</div>
@@ -1002,7 +1015,7 @@
       const blob = new Blob([JSON.stringify(store)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `tokai-kokugo-kiroku-${T}.json`;
+      a.download = `${APP.file}-${T}.json`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });

@@ -1,0 +1,10 @@
+{
+  "name": "東海中 社会トレーニング",
+  "short_name": "東海中社会",
+  "start_url": "./shakai.html",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#c05b12",
+  "lang": "ja",
+  "icons": [{ "src": "icon-shakai.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

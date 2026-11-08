@@ -248,5 +248,6 @@
     bank,
     ANTONYMS,
     SYNONYMS,
+    app: { links: [{ href: 'shakai.html', label: '🗾 社会トレーニング' }] },
   };
 })(typeof window !== 'undefined' ? window : globalThis);
