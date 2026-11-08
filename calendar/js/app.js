@@ -60,11 +60,21 @@
         <div>${chip(next.type)} <b>${esc(next.school)}</b></div>
         <div class="muted">${S.fmtDate(next.date, next.time)}</div>
       </section>` : '<section class="card"><p>これからの予定はありません。おつかれさまでした！</p></section>'}
+      ${icsBanner()}
       ${conflicts.length ? `<section class="card warn"><h2>⚠️ 気をつけること</h2><ul class="notes">${conflicts.map((c) => `<li>${esc(c.text)}</li>`).join('')}</ul></section>` : ''}
       ${group('🚨 期限をすぎています', late, 'red')}
       ${group('📌 1週間以内', soon)}
       ${group('🗓️ その先の予定', later)}
       <p class="muted small">チェックを入れると「済み」になり、お知らせも止まります。日付は目安なので、必ず募集要項で確認してください。</p>`;
+  }
+
+  function icsBanner() {
+    const k = icsState();
+    if (k === 'ok') return '';
+    const msg = k === 'none'
+      ? '<b>🔔 スマホに通知が届くようにしましょう</b><div class="small">アプリを閉じていても、締切の前に通知が届きます（1 分でできます）。</div>'
+      : '<b>🔔 日程が変わりました</b><div class="small">スマホのカレンダーに、もう一度入れなおしてください。</div>';
+    return `<button class="card banner" data-go="settings" type="button">${msg}<span class="go">設定する ›</span></button>`;
   }
 
   // ---- 月のカレンダー ----
@@ -159,23 +169,43 @@
     </section>`;
   }
 
+  // ---- スマホのカレンダーへの書き出し状態 ----
+  const icsSig = () => {
+    const txt = JSON.stringify([S.buildEvents(st.schools).map((e) => [e.key, e.date, e.time, e.note, e.school]), st.settings.offsets]);
+    let h = 5381; for (let i = 0; i < txt.length; i++) h = ((h << 5) + h + txt.charCodeAt(i)) | 0;
+    return String(h);
+  };
+  // 'none'＝まだ書き出していない / 'stale'＝書き出しのあとに変わった / 'ok'
+  const icsState = () => (!st.settings.icsSig ? 'none' : st.settings.icsSig === icsSig() ? 'ok' : 'stale');
+
   // ---- 設定 ----
   function viewSettings() {
     const offs = st.settings.offsets;
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
-    return `<section class="card">
-      <h2>🔔 お知らせのタイミング</h2>
-      <div class="opts">${[14, 7, 3, 2, 1, 0].map((n) => `<label class="opt"><input type="checkbox" data-off="${n}" ${offs.includes(n) ? 'checked' : ''}> ${n === 0 ? '当日' : n + '日前'}</label>`).join('')}</div>
-      <p class="muted small">アプリを開いたときに、この日にあたる予定をお知らせします。</p>
-      ${perm === 'unsupported' ? '<p class="muted small">このブラウザは通知に対応していません。</p>'
-        : perm === 'granted' ? '<p class="small">✅ ブラウザの通知はオンです。</p>'
-        : `<button class="btn" data-perm>ブラウザの通知をオンにする</button>`}
+    const ics = icsState();
+    return `<section class="card ${ics === 'ok' ? '' : 'warn'}">
+      <h2>📱 スマホに通知を届ける（おすすめ）</h2>
+      <p class="small">このアプリを<b>閉じていても</b>通知が届くように、すべての予定と下の「お知らせのタイミング」を、スマホのカレンダーに入れます。通知はカレンダーアプリが出します。</p>
+      ${ics === 'ok' ? '<p class="small">✅ 書き出しずみです（日程を直したら、もう一度書き出してください）。</p>'
+        : ics === 'stale' ? '<p class="small"><b>⚠️ 前回の書き出しのあとに日程やタイミングが変わりました。</b>もう一度書き出してください。</p>' : ''}
+      <button class="btn primary" data-ics ${st.schools.length ? '' : 'disabled'}>📥 カレンダーに入れる（.ics）</button>
+      <details class="howto"><summary>入れ方（iPhone）</summary><ol>
+        <li>Safari で上のボタンを押す</li><li>「カレンダーに追加」→「すべてを追加」を押す</li>
+        <li>入れるカレンダーをえらぶ（家族で共有しているカレンダーにすると、夫婦どちらにも通知が届きます）</li></ol></details>
+      <details class="howto"><summary>入れ方（Android・Google カレンダー）</summary><ol>
+        <li>上のボタンを押してファイルを保存し、通知から開く（Google カレンダーで開く）</li>
+        <li>うまくいかないときは、パソコンで Google カレンダー →「設定」→「インポート / エクスポート」からファイルを読みこむ</li>
+        <li>Google カレンダーは、読みこんだ予定に自分の「通知の初期設定」を使うことがあります。予定を開いて通知の時刻を確かめてください</li></ol></details>
+      <p class="muted small">同じ予定を読みこみ直すと上書きされます（iPhone は重なることがあるので、そのときは古い予定を消してください）。</p>
     </section>
     <section class="card">
-      <h2>📱 スマホのカレンダーに入れる</h2>
-      <p class="small">アプリを開かなくても通知が届くように、<b>すべての予定とお知らせ</b>をカレンダー用ファイル（.ics）にして書き出します。iPhone・Android・Google カレンダーで読みこめます。夫婦で共有するのにも便利です。</p>
-      <button class="btn primary" data-ics ${st.schools.length ? '' : 'disabled'}>カレンダーに書き出す（.ics）</button>
-      <p class="muted small">日程を直したときは、もう一度書き出してください（同じ予定は上書きされます）。</p>
+      <h2>🔔 お知らせのタイミング</h2>
+      <div class="opts">${[14, 7, 3, 2, 1, 0].map((n) => `<label class="opt"><input type="checkbox" data-off="${n}" ${offs.includes(n) ? 'checked' : ''}> ${n === 0 ? '当日' : n + '日前'}</label>`).join('')}</div>
+      <p class="muted small">スマホのカレンダーの通知と、このアプリを開いたときのお知らせの両方に使います。</p>
+      ${perm === 'unsupported' ? '<p class="muted small">このブラウザは、アプリからの通知に対応していません。</p>'
+        : perm === 'granted' ? '<p class="small">✅ アプリを開いたときに、ブラウザの通知でもお知らせします。</p>'
+        : perm === 'denied' ? '<p class="muted small">ブラウザの通知はブロックされています（ブラウザの設定から許可できます）。</p>'
+        : `<button class="btn" data-perm>アプリを開いたときにブラウザ通知も出す</button>`}
     </section>
     <section class="card">
       <h2>💾 データ</h2>
@@ -231,10 +261,13 @@
       const n = Number(el.dataset.off);
       const set = new Set(st.settings.offsets);
       el.checked ? set.add(n) : set.delete(n);
-      st.settings.offsets = [...set].sort((a, b) => b - a); save();
+      st.settings.offsets = [...set].sort((a, b) => b - a); save(); render();
     }, 'change');
     on('[data-perm]', () => Notification.requestPermission().then(render));
-    on('[data-ics]', () => download('juken-schedule.ics', S.toICS(S.buildEvents(st.schools), st.settings.offsets, new Date()), 'text/calendar'));
+    on('[data-ics]', () => {
+      download('juken-schedule.ics', S.toICS(S.buildEvents(st.schools), st.settings.offsets, new Date()), 'text/calendar');
+      st.settings.icsSig = icsSig(); save(); render();
+    });
     on('[data-export]', () => download('juken-schedule.json', JSON.stringify({ schools: st.schools, done: st.done, settings: st.settings }, null, 2), 'application/json'));
     on('[data-import]', (el) => {
       const f = el.files[0]; if (!f) return;
@@ -264,11 +297,22 @@
     if (!due.length) return;
     const lines = due.map((d) => `${d.event.school} ${S.TYPE[d.event.type].label}：${S.countdown(d.days)}（${S.fmtDate(d.event.date, d.event.time)}）`);
     if ('Notification' in window && Notification.permission === 'granted') {
-      for (const l of lines) { try { new Notification('受験スケジュール', { body: l, icon: 'icon.svg', tag: l }); } catch { /* 一部のブラウザ */ } }
+      for (const l of lines) showNotice(l);
     }
     toast('🔔 ' + lines.join(' / '));
     for (const d of due) st.notified[d.id] = Date.now();
     save();
+  }
+  // Android の Chrome などは new Notification が使えないので、service worker から出す
+  const swReady = ('serviceWorker' in navigator && location.protocol.startsWith('http'))
+    ? navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).catch(() => null)
+    : Promise.resolve(null);
+  function showNotice(body) {
+    const opt = { body, icon: 'icon.svg', tag: body };
+    swReady.then((reg) => {
+      if (reg) return reg.showNotification('受験スケジュール', opt);
+      new Notification('受験スケジュール', opt);
+    }).catch(() => { /* このブラウザでは出せない */ });
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkReminders(); });
   setInterval(checkReminders, 60 * 60 * 1000);

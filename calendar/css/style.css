@@ -136,3 +136,8 @@ h2.red { color: var(--red); }
 .toast { position: fixed; left: 16px; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 600px; margin: 0 auto; background: var(--ink); color: var(--bg); padding: 12px 16px; border-radius: 12px; font-size: .92rem; opacity: 0; transform: translateY(10px); transition: .25s; pointer-events: none; z-index: 10; }
 .toast.show { opacity: 1; transform: none; }
 @media (max-width: 520px) { .day .pill i { display: none; } .day .pill { text-overflow: clip; text-align: center; } }
+.banner { display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); background: var(--amber-bg); border: 2px solid var(--amber); cursor: pointer; position: relative; padding-right: 96px; }
+.banner .go { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-weight: 700; color: var(--amber); }
+.howto { margin: 10px 0 0; font-size: .9rem; }
+.howto summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+.howto ol { margin: 4px 0 0; padding-left: 1.3em; }
