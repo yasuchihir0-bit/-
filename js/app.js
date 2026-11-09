@@ -92,6 +92,7 @@
     out.sessions = int(d.sessions);
     if ([10, 20, 30, 50].includes(+d.goal)) out.goal = +d.goal;
     if (d.answerMode === 'choice') out.answerMode = 'choice';
+    if (d.padSize === 'xl') out.padSize = 'xl';
     if (d.seenGuide === true) out.seenGuide = true;
     if (Array.isArray(d.wrong)) out.wrong = d.wrong.filter((q) => q && typeof q === 'object' && cats.has(q.cat) && typeof q.q === 'string');
     return out;
@@ -728,10 +729,7 @@
         <div class="qtext">${rich(maskHint(asWriteQ(q.q), term))}</div>
         <div class="small">漢字 ${len} 文字で書きましょう。</div>
         <div class="pad" id="pad"><canvas id="guide" aria-hidden="true"></canvas><canvas id="ink" aria-label="ここに答えを書く"></canvas></div>
-        <div class="row" style="justify-content:flex-end">
-          <button class="btn ghost" id="undo" type="button">1 画もどす</button>
-          <button class="btn ghost" id="clear" type="button">ぜんぶ消す</button>
-        </div>
+        ${padTools()}
         <div id="back" hidden>
           <hr>
           <div class="small">答え</div>
@@ -745,9 +743,7 @@
       <div id="act"><button class="btn wide" id="flip" type="button">答えを見る</button></div>`);
     clearInterval(timerId);
     timerId = setInterval(() => { const c = document.getElementById('clock'); if (c) c.textContent = elapsed(); else clearInterval(timerId); }, 1000);
-    const pad = setupPad(len);
-    on('#undo', 'click', () => pad.undo());
-    on('#clear', 'click', () => pad.clear());
+    wirePad(len);
     const shownAt = Date.now();
     let open = false, done = false;
     const LABEL = { ok: '○ 書けた', hard: '△ おしい', ng: '× 書けなかった' };
@@ -1142,13 +1138,39 @@
     kanjiShow();
   }
 
+  /* 手書きのわくの下のボタン（マスの大きさ・1 画もどす・ぜんぶ消す） */
+  const padTools = () => `<div class="row pad-tools">
+          <div class="seg" role="group" aria-label="マスの大きさ">
+            <button type="button" data-ps="l" aria-pressed="${store.padSize !== 'xl'}" aria-label="マス 大">マス大</button>
+            <button type="button" data-ps="xl" aria-pressed="${store.padSize === 'xl'}" aria-label="マス 特大">特大</button>
+          </div>
+          <span class="grow"></span>
+          <button class="btn ghost" id="undo" type="button" aria-label="1 画もどす">↩ もどす</button>
+          <button class="btn ghost" id="clear" type="button" aria-label="ぜんぶ消す">消す</button>
+        </div>`;
+  function wirePad(n) {
+    let pad = setupPad(n);
+    on('#undo', 'click', () => pad.undo());
+    on('#clear', 'click', () => pad.clear());
+    onAll('[data-ps]', 'click', (e) => {
+      if (e.currentTarget.dataset.ps === 'xl') store.padSize = 'xl'; else delete store.padSize;
+      save();
+      $app.querySelectorAll('[data-ps]').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.ps === 'xl') === (store.padSize === 'xl'))));
+      // 大きさを変えたら、わくを作り直す（書いた線は消える）
+      $app.querySelector('#pad').innerHTML = '<canvas id="guide" aria-hidden="true"></canvas><canvas id="ink" aria-label="ここに書く"></canvas>';
+      pad = setupPad(n);
+    });
+  }
+
   /* 手書きのわく：字数ぶんの練習用のます目（十字の点線つき）をかき、その上に線を書けるようにする */
   function setupPad(n) {
     const pad = $app.querySelector('#pad');
     const guide = pad.querySelector('#guide'), ink = pad.querySelector('#ink');
     const W = pad.clientWidth;
-    const perRow = Math.max(1, Math.min(n, Math.floor(W / 72)));
-    const box = Math.min(120, Math.floor(W / perRow));
+    // マスの大きさ：ふつうは 1 マス 100px 以上（スマホで 1 行 3 マス）、特大は 150px 以上（1 行 2 マス）
+    const xl = store.padSize === 'xl';
+    const perRow = Math.max(1, Math.min(n, Math.floor(W / (xl ? 150 : 100))));
+    const box = Math.min(xl ? 240 : 170, Math.floor(W / perRow));
     const rows = Math.ceil(n / perRow);
     const H = rows * box;
     const dpr = window.devicePixelRatio || 1;
@@ -1224,10 +1246,7 @@
         <div class="qtext">${rich(maskHint(w.q, w.ans))}</div>
         <div class="small">${len} 文字で書きましょう。${w.yomi ? `<button class="linkbtn" id="yomiBtn" type="button">読みを見る</button><span id="yomi" hidden>読み：<b>${esc(w.yomi)}</b></span>` : ''}</div>
         <div class="pad" id="pad"><canvas id="guide" aria-hidden="true"></canvas><canvas id="ink" aria-label="ここに漢字を書く"></canvas></div>
-        <div class="row" style="justify-content:flex-end">
-          <button class="btn ghost" id="undo" type="button">1 画もどす</button>
-          <button class="btn ghost" id="clear" type="button">ぜんぶ消す</button>
-        </div>
+        ${padTools()}
         <div id="back" hidden>
           <hr>
           <div class="small">正しい漢字</div>
@@ -1238,9 +1257,7 @@
         </div>
       </div>
       <div id="act"><button class="btn wide" id="flip" type="button">答えを見る</button></div>`);
-    const pad = setupPad(len);
-    on('#undo', 'click', () => pad.undo());
-    on('#clear', 'click', () => pad.clear());
+    wirePad(len);
     on('#yomiBtn', 'click', (e) => { e.currentTarget.hidden = true; $app.querySelector('#yomi').hidden = false; });
     const grade = (g) => {
       kSchedule(w, g);

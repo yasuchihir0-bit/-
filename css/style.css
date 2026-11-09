@@ -330,3 +330,13 @@ h2 { font-size: 20px; margin: 20px 0 10px; }
 .kanji-list li { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); padding: 4px 0; }
 .kanji-sm { font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "Klee", "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 22px; }
 .qhead > span:last-child { white-space: nowrap; flex: none; }
+.pad-tools { gap: 8px; }
+.pad-tools .grow { flex: 1; }
+.pad-tools .seg button { min-width: 0; padding: 8px 12px; font-size: 15px; }
+.pad-tools .btn { min-height: 44px; padding: 8px 12px; }
+@media (max-width: 400px) { .pad-tools .seg button { padding: 8px 9px; font-size: 14px; } }
+.pad-tools { flex-wrap: nowrap; }
+.pad-tools .btn { padding: 8px 10px; font-size: 15px; white-space: nowrap; }
+.pad-tools .seg { flex-wrap: nowrap; flex: none; }
+.pad-tools .seg button { white-space: nowrap; }
+@media (max-width: 340px) { .pad-tools { flex-wrap: wrap; } }
