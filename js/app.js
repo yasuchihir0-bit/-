@@ -91,6 +91,7 @@
     });
     out.sessions = int(d.sessions);
     if ([10, 20, 30, 50].includes(+d.goal)) out.goal = +d.goal;
+    if (d.answerMode === 'choice') out.answerMode = 'choice';
     if (d.seenGuide === true) out.seenGuide = true;
     if (Array.isArray(d.wrong)) out.wrong = d.wrong.filter((q) => q && typeof q === 'object' && cats.has(q.cat) && typeof q.q === 'string');
     return out;
@@ -155,14 +156,14 @@
   }
 
   /* クイズで答えたとき */
-  function record(q, ok, sec) {
+  function record(q, ok, sec, grade) {
     const k = `${q.subject}:${q.cat}`;
     const s = store.stats[k] || (store.stats[k] = { n: 0, ok: 0 });
     s.n++; if (ok) s.ok++;
     const lv = String(lvOf(q));
     const L = store.lvs[lv] || (store.lvs[lv] = { n: 0, ok: 0 });
     L.n++; if (ok) L.ok++;
-    schedule(q, ok ? 'ok' : 'ng');
+    schedule(q, grade || (ok ? 'ok' : 'ng'));
     logDay(ok, sec, 'quiz');
     save();
   }
@@ -594,6 +595,14 @@
         </dl>
         <p class="small" style="margin:0">正直につけるほど、効率よく覚えられます。</p>
       </div>
+      ${KANJI.length ? `<div class="card">
+        <h2 style="margin-top:0">答え方</h2>
+        <div class="seg" role="group" aria-label="答え方">
+          <button type="button" data-am="write" aria-pressed="${store.answerMode !== 'choice'}">✍️ 書き取り</button>
+          <button type="button" data-am="choice" aria-pressed="${store.answerMode === 'choice'}">🔘 えらぶ・キーボード</button>
+        </div>
+        <p class="small" style="margin:8px 0 0">「書き取り」にすると、答えが人物・できごと・地名・用語の問題は、選択肢を出さずに<b>手書きで漢字を書いて</b>答えます。書いたら答えを見て、自分で ○・△・× をつけます。文を選ぶ問題・並べかえ・「すべて選ぶ」はそのままです。</p>
+      </div>` : ''}
       <div class="card">
         <h2 style="margin-top:0">1 日の目標</h2>
         <div class="seg" role="group" aria-label="1 日の目標">
@@ -611,6 +620,11 @@
       </div>
       <div class="row"><button class="btn sub" id="again" type="button">はじめての案内をもう一度見る</button>
       <button class="btn" id="back" type="button">ホームへ</button></div>`);
+    onAll('[data-am]', 'click', (e) => {
+      if (e.currentTarget.dataset.am === 'choice') store.answerMode = 'choice'; else delete store.answerMode;
+      save();
+      $app.querySelectorAll('[data-am]').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.am === 'choice') === (store.answerMode === 'choice'))));
+    });
     onAll('[data-goal]', 'click', (e) => {
       store.goal = +e.currentTarget.dataset.goal; save();
       $app.querySelectorAll('[data-goal]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.goal === store.goal)));
@@ -687,8 +701,90 @@
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
+  /* ───────── 書き取りで答える（答えが用語の問題） ───────── */
+  const NOT_TERM = /正しいもの|誤って|まちがって|適切なもの|組み合わせ|並べ|説明|理由|特ちょう|どうなり|どのよう|ものはどれ|ことはどれ|すべて選び|何年|何才|何件|何海里|何％|いくつ|数字/;
+  function writeTermOf(q) {
+    if (!KANJI.length || store.answerMode === 'choice') return null;
+    if (q.type !== 'choice' && q.type !== 'text') return null;
+    let w = q.type === 'text' ? q.accept[0] : q.ans;
+    w = String(w).replace(/（.*?）$/, '').trim();
+    if (!HAS_KANJI.test(w) || [...w].length > 10 || /[\s0-9０-９、。→―ー・「」『』,]/.test(w)) return null;
+    if (q.type === 'choice' && NOT_TERM.test(q.q)) return null;
+    return w;
+  }
+  const asWriteQ = (s) => s.replace(/はどれですか。$/, 'は何ですか。').replace(/どれですか。$/, '何ですか。');
+
+  function writeShow(q, term) {
+    const s = SUBJ[q.subject], cat = catOf(q.subject, q.cat);
+    const total = session.questions.length;
+    const card = store.cards[qkey(q)];
+    const len = [...term].length;
+    const yomi = q.type === 'text' ? (q.accept.find((x) => KANA_ONLY.test(x)) || '') : '';
+    h(`
+      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${esc(cat ? cat.name : s.name)}</span> <span class="lv" title="難易度">${stars(q.lv || 1)}</span> <span class="small">✍️ 書き取り</span>${card ? (card.lapses ? ` <span class="small">・前にまちがえた</span>` : '') : ' <span class="small">・初めて</span>'}</span>
+        <span>${session.idx + 1} / ${total}　⏱ <span id="clock">${elapsed()}</span></span></div>
+      <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
+      <div class="card">
+        <div class="qtext">${rich(maskHint(asWriteQ(q.q), term))}</div>
+        <div class="small">漢字 ${len} 文字で書きましょう。</div>
+        <div class="pad" id="pad"><canvas id="guide" aria-hidden="true"></canvas><canvas id="ink" aria-label="ここに答えを書く"></canvas></div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn ghost" id="undo" type="button">1 画もどす</button>
+          <button class="btn ghost" id="clear" type="button">ぜんぶ消す</button>
+        </div>
+        <div id="back" hidden>
+          <hr>
+          <div class="small">答え</div>
+          <div class="kanji-ans">${esc(term)}</div>
+          ${yomi ? `<div class="small">${esc(yomi)}</div>` : ''}
+          ${q.ans !== term ? `<div class="small">（${esc(q.ans)}）</div>` : ''}
+          ${q.exp ? `<div class="exp-title">解説</div><div class="exp">${rich(q.exp)}</div>` : ''}
+          <p class="small" style="margin:8px 0 0">自分の字と見くらべましょう。答えはわかったけれど字がちがったときは △ にします。</p>
+        </div>
+      </div>
+      <div id="act"><button class="btn wide" id="flip" type="button">答えを見る</button></div>`);
+    clearInterval(timerId);
+    timerId = setInterval(() => { const c = document.getElementById('clock'); if (c) c.textContent = elapsed(); else clearInterval(timerId); }, 1000);
+    const pad = setupPad(len);
+    on('#undo', 'click', () => pad.undo());
+    on('#clear', 'click', () => pad.clear());
+    const shownAt = Date.now();
+    let open = false, done = false;
+    const LABEL = { ok: '○ 書けた', hard: '△ おしい', ng: '× 書けなかった' };
+    const grade = (g) => {
+      if (done) return;
+      done = true;
+      const ok = g === 'ok';
+      session.results.push({ q, ok, given: `書き取り：${LABEL[g]}` });
+      record(q, ok, (Date.now() - shownAt) / 1000, g);
+      session.idx++;
+      if (session.idx < session.questions.length) show(); else result();
+    };
+    const flip = () => {
+      if (open) return;
+      open = true;
+      $app.querySelector('#back').hidden = false;
+      $app.querySelector('#act').innerHTML = `
+        <p class="small" style="margin:0 0 6px">正しく書けましたか？</p>
+        <div class="grade">
+          <button class="btn g-ng" data-gr="ng" type="button"><b>×</b>書けなかった</button>
+          <button class="btn g-hard" data-gr="hard" type="button"><b>△</b>おしい</button>
+          <button class="btn g-ok" data-gr="ok" type="button"><b>○</b>書けた</button>
+        </div>`;
+      onAll('[data-gr]', 'click', (e) => grade(e.currentTarget.dataset.gr));
+      $app.querySelector('#back').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+    on('#flip', 'click', flip);
+    setKeys((e) => {
+      if (!open && e.key === 'Enter') { e.preventDefault(); flip(); return; }
+      if (open) { const g = { 1: 'ng', 2: 'hard', 3: 'ok' }[e.key]; if (g) grade(g); }
+    });
+  }
+
   function show() {
     const q = session.questions[session.idx];
+    const wterm = writeTermOf(q);
+    if (wterm) { writeShow(q, wterm); return; }
     const s = SUBJ[q.subject], cat = catOf(q.subject, q.cat);
     const total = session.questions.length;
     const card = store.cards[qkey(q)];

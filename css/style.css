@@ -329,3 +329,4 @@ h2 { font-size: 20px; margin: 20px 0 10px; }
 .kanji-list { list-style: none; padding: 0; margin: 8px 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 12px; }
 .kanji-list li { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); padding: 4px 0; }
 .kanji-sm { font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "Klee", "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 22px; }
+.qhead > span:last-child { white-space: nowrap; flex: none; }
