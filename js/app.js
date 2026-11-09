@@ -43,7 +43,7 @@
 
   /* ───────── 保存（この端末のブラウザ内のみ） ───────── */
   const KEY = APP.key;
-  const blank = () => ({ version: 2, stats: {}, cards: {}, days: {}, lvs: {}, sessions: 0 });
+  const blank = () => ({ version: 2, stats: {}, cards: {}, kanji: {}, days: {}, lvs: {}, sessions: 0 });
   let store = blank();
   try {
     const raw = localStorage.getItem(KEY);
@@ -82,6 +82,13 @@
       if (isDate(k) && v) out.days[k] = { n: int(v.n), ok: int(v.ok), sec: int(v.sec), cards: int(v.cards) };
     });
     ['1', '2', '3'].forEach((k) => { const v = obj(d.lvs)[k]; if (v) out.lvs[k] = { n: int(v.n), ok: int(v.ok) }; });
+    // 漢字で書く（手書き）の記録：キーは書く言葉そのもの
+    Object.entries(obj(d.kanji)).forEach(([k, c]) => {
+      if (typeof k !== 'string' || !k || k.length > 40 || !c || typeof c !== 'object') return;
+      const card = { box: int(c.box, 5), due: isDate(c.due) ? c.due : today(), n: int(c.n), ok: int(c.ok), lapses: int(c.lapses) };
+      if (isDate(c.last)) card.last = c.last;
+      out.kanji[k] = card;
+    });
     out.sessions = int(d.sessions);
     if ([10, 20, 30, 50].includes(+d.goal)) out.goal = +d.goal;
     if (d.seenGuide === true) out.seenGuide = true;
@@ -413,6 +420,10 @@
           <span class="ic">🏆</span><span class="tt">力だめし</span>
           <span class="ds">15 問のテスト。ふつうのテストと、東海中レベルのテスト。</span>
         </button>
+        ${KANJI.length ? `<button class="tile" style="--tc:var(--ok)" data-kanji="1">
+          <span class="ic">✍️</span><span class="tt">漢字で書く</span>
+          <span class="ds">用語を指やペンで書いて練習。答えを見て、自分で ○・△・× をつけます。</span>
+        </button>` : ''}
       </div>
 
       <div class="card">
@@ -430,6 +441,7 @@
     on('[data-daily]', 'click', startDaily);
     on('[data-pick]', 'click', () => practice('quiz'));
     on('[data-test]', 'click', tests);
+    on('[data-kanji]', 'click', () => kanjiHome());
     on('[data-stats]', 'click', analysis);
     on('[data-help]', 'click', help);
     if (!store.seenGuide) guide();
@@ -558,6 +570,7 @@
           <dt>▶ 今日の学習</dt><dd>復習の問題を先に、足りない分を新しい問題で 10 問。いちばんおすすめ。</dd>
           <dt>📚 分野をえらぶ</dt><dd>分野を 1 つえらんで練習。<b>クイズ</b>（答えをえらぶ・書く）と<b>暗記カード</b>（思い出してからめくる）を切りかえられます。</dd>
           <dt>🏆 力だめし</dt><dd>15 問のテスト。「東海中レベル」はむずかしい問題だけです。</dd>
+          ${KANJI.length ? '<dt>✍️ 漢字で書く</dt><dd>用語を手書きで書く練習。書いたら「答えを見る」を押し、正しい漢字と見くらべて ○（書けた）・△（おしい）・×（書けなかった）を自分でつけます。書けなかった言葉は、またあとで出てきます。</dd>' : ''}
           <dt>📊 くわしく見る</dt><dd>毎日の問題数、正答率、分野ごとの覚えぐあい、よくまちがえる問題がわかります。</dd>
         </dl>
       </div>
@@ -932,6 +945,262 @@
         <button class="btn sub" id="home2" type="button">ホームへ</button>
       </div>`);
     on('#again', 'click', () => flashStart(shuffle(weak), session.title));
+    on('#home2', 'click', home);
+  }
+
+
+  /* ───────── 漢字で書く（手書きで書いて、自分で答え合わせ） ─────────
+   * 言葉は「記述式の問題のうち答えに漢字がふくまれるもの」と SUBJECT.kanjiExtra（[分野, ヒント, 漢字, よみ, 解説]）から作る。
+   * 記録は store.kanji に、クイズとは別に保存する（間隔反復のしくみは同じ）。 */
+  const HAS_KANJI = /[一-鿿々]/;
+  const KANA_ONLY = /^[ぁ-ゖー・]+$/;
+  const KANJI = (() => {
+    if (!APP.kanji) return [];
+    const list = [], seen = new Set();
+    const add = (w) => { if (!w.ans || seen.has(w.ans)) return; seen.add(w.ans); w.key = w.ans; list.push(w); };
+    (K.bank || []).forEach((b) => {
+      if (b.a && HAS_KANJI.test(b.a[0])) add({ cat: b.cat, lv: lvOf(b), q: b.q, ans: b.a[0], yomi: b.a.find((x) => KANA_ONLY.test(x)) || '', exp: b.exp || '' });
+    });
+    (K.kanjiExtra || []).forEach(([cat, q, ans, yomi, exp]) => add({ cat, lv: 2, q, ans, yomi: yomi || '', exp: exp || '' }));
+    return list.filter((w) => catOf(K.id, w.cat));
+  })();
+  /* ヒントの中に答えの一部（漢字 2 字以上）が入っていたら 〇 でかくす（例：「〜した条約」→「〜した〇〇」） */
+  function maskHint(q, ans) {
+    let out = q;
+    const chars = [...ans];
+    for (let n = chars.length; n >= 2; n--) {
+      for (let i = 0; i + n <= chars.length; i++) {
+        const sub = chars.slice(i, i + n).join('');
+        if (/^[\u4e00-\u9fff々]+$/.test(sub) && out.includes(sub)) out = out.split(sub).join('〇'.repeat(n));
+      }
+    }
+    return out;
+  }
+  const kGroup = (w) => String((catOf(K.id, w.cat) || {}).note || '').split('・')[0] || 'そのほか';
+  const K_GROUPS = ['すべて', ...new Set(KANJI.map(kGroup))];
+
+  function kSchedule(w, grade) {
+    const t = today();
+    let c = store.kanji[w.key];
+    const isNew = !c;
+    if (!c) c = store.kanji[w.key] = { box: 0, due: t, n: 0, ok: 0, lapses: 0 };
+    c.n++;
+    if (grade === 'ok') c.ok++;
+    if (grade === 'ng') { c.lapses++; c.box = 0; }
+    else if (grade === 'hard') c.box = Math.max(1, c.box - 1);
+    else if (isNew) c.box = 2;
+    else if (c.due <= t) c.box = Math.min(5, c.box + 1);
+    c.due = addDays(t, INTERVALS[c.box]);
+    c.last = t;
+  }
+
+  /* 出す順：①復習日が来た言葉（忘れやすい順）②まだ書いていない言葉 ③そのほか */
+  function kanjiSet(words, n) {
+    const t = today();
+    const due = [], fresh = [], rest = [];
+    words.forEach((w) => {
+      const c = store.kanji[w.key];
+      if (!c) fresh.push(w); else if (c.due <= t) due.push(w); else rest.push(w);
+    });
+    due.sort((a, b) => store.kanji[a.key].box - store.kanji[b.key].box);
+    rest.sort((a, b) => store.kanji[a.key].due.localeCompare(store.kanji[b.key].due));
+    return due.concat(shuffle(fresh), rest).slice(0, n);
+  }
+
+  function kanjiHome(group = 'すべて', count = 10) {
+    reset();
+    const words = KANJI.filter((w) => group === 'すべて' || kGroup(w) === group);
+    const m = { total: words.length, new: 0, learn: 0, fixed: 0, master: 0 };
+    words.forEach((w) => { m[stageOf(store.kanji[w.key])]++; });
+    const t = today();
+    const due = words.filter((w) => store.kanji[w.key] && store.kanji[w.key].due <= t).length;
+    const missed = words.filter((w) => store.kanji[w.key] && store.kanji[w.key].lapses > 0);
+    h(`
+      <h1>✍️ 漢字で書く</h1>
+      <p class="lead">ヒントを読んで、用語を<b>漢字で</b>わくの中に書きます。書けたら「答えを見る」を押し、正しい漢字と見くらべて、自分で ○・△・× をつけてください。</p>
+      <div class="card">
+        <div class="row" style="margin-bottom:10px"><span class="small">分野</span>
+          <div class="seg" role="group" aria-label="分野">${K_GROUPS.map((g) => `<button type="button" data-g="${esc(g)}" aria-pressed="${g === group}">${esc(g)}</button>`).join('')}</div></div>
+        <div class="row" style="margin-bottom:12px"><span class="small">1 回に書く数</span>
+          <div class="seg" role="group" aria-label="1 回に書く数">${[5, 10, 20].map((n) => `<button type="button" data-n="${n}" aria-pressed="${n === count}">${n} 語</button>`).join('')}</div></div>
+        <button class="btn wide start" id="kgo" type="button">▶ 書きはじめる<small>${due ? `復習 ${Math.min(due, count)} 語をふくむ ` : ''}${count} 語</small></button>
+        ${missed.length ? `<button class="btn sub wide" id="kmiss" type="button" style="margin-top:10px">まちがえた言葉だけ（${missed.length} 語）</button>` : ''}
+      </div>
+      <div class="card">
+        <strong>${esc(group === 'すべて' ? '全部' : group)}の ${m.total} 語のうち</strong>
+        ${masteryBar(m, '漢字で書く')}
+        <div class="legend"><i class="m4"></i>書ける<i class="m3"></i>もう少し<i class="m2"></i>にがて<i class="m0"></i>まだ</div>
+        <p class="small" style="margin:4px 0 0">書ける <b>${m.master}</b>・もう少し <b>${m.fixed}</b>・にがて <b>${m.learn}</b>・まだ <b>${m.new}</b>${due ? `・今日の復習 <b>${due}</b>` : ''}</p>
+      </div>
+      <p class="small">タブレットやスマホでは指やペンで、パソコンではマウスで書けます。とめ・はね・はらいまでていねいに書きましょう。</p>`);
+    onAll('[data-g]', 'click', (e) => kanjiHome(e.currentTarget.dataset.g, count));
+    onAll('[data-n]', 'click', (e) => kanjiHome(group, +e.currentTarget.dataset.n));
+    on('#kgo', 'click', () => kanjiStart(kanjiSet(words, count), '漢字で書く'));
+    on('#kmiss', 'click', () => kanjiStart(shuffle(missed).slice(0, Math.max(count, 10)), 'まちがえた言葉'));
+  }
+
+  function kanjiStart(words, title) {
+    if (!words.length) { notice('書く言葉がありません。'); return; }
+    reset();
+    session = { title, questions: words, idx: 0, results: [], t0: Date.now(), done: false, kanji: true };
+    kanjiShow();
+  }
+
+  /* 手書きのわく：字数ぶんの練習用のます目（十字の点線つき）をかき、その上に線を書けるようにする */
+  function setupPad(n) {
+    const pad = $app.querySelector('#pad');
+    const guide = pad.querySelector('#guide'), ink = pad.querySelector('#ink');
+    const W = pad.clientWidth;
+    const perRow = Math.max(1, Math.min(n, Math.floor(W / 72)));
+    const box = Math.min(120, Math.floor(W / perRow));
+    const rows = Math.ceil(n / perRow);
+    const H = rows * box;
+    const dpr = window.devicePixelRatio || 1;
+    [guide, ink].forEach((c) => {
+      c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+      c.style.width = `${W}px`; c.style.height = `${H}px`;
+      c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+    });
+    pad.style.height = `${H}px`;
+    const css = getComputedStyle(document.documentElement);
+    const lineColor = css.getPropertyValue('--line').trim() || '#ccc';
+    const inkColor = css.getPropertyValue('--text').trim() || '#000';
+    const g = guide.getContext('2d');
+    const x0 = Math.floor((W - perRow * box) / 2);
+    g.strokeStyle = lineColor;
+    for (let i = 0; i < n; i++) {
+      const x = x0 + (i % perRow) * box, y = Math.floor(i / perRow) * box;
+      g.setLineDash([]); g.lineWidth = 2; g.strokeRect(x + 3, y + 3, box - 6, box - 6);
+      g.setLineDash([5, 5]); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x + box / 2, y + 6); g.lineTo(x + box / 2, y + box - 6);
+      g.moveTo(x + 6, y + box / 2); g.lineTo(x + box - 6, y + box / 2); g.stroke();
+    }
+    const ctx = ink.getContext('2d');
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(3, Math.round(box / 22));
+    const strokes = [];
+    let cur = null;
+    const pos = (e) => { const r = ink.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const redraw = () => {
+      ctx.clearRect(0, 0, W, H);
+      strokes.forEach((st) => {
+        ctx.beginPath();
+        st.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        if (st.length === 1) ctx.lineTo(st[0][0] + 0.1, st[0][1] + 0.1);
+        ctx.stroke();
+      });
+    };
+    ink.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { ink.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+      cur = [pos(e)]; strokes.push(cur); redraw();
+    });
+    ink.addEventListener('pointermove', (e) => {
+      if (!cur) return;
+      e.preventDefault();
+      const pts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      (pts.length ? pts : [e]).forEach((pe) => {
+        const p = pos(pe), a = cur[cur.length - 1];
+        cur.push(p);
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(p[0], p[1]); ctx.stroke();
+      });
+    });
+    const end = () => { cur = null; };
+    ink.addEventListener('pointerup', end);
+    ink.addEventListener('pointercancel', end);
+    ink.addEventListener('pointerleave', end);
+    return { undo() { strokes.pop(); redraw(); }, clear() { strokes.length = 0; redraw(); }, count: () => strokes.length };
+  }
+
+  function kanjiShow() {
+    const w = session.questions[session.idx];
+    const cat = catOf(K.id, w.cat);
+    const total = session.questions.length;
+    const c = store.kanji[w.key];
+    const shownAt = Date.now();
+    let open = false;
+    const len = [...w.ans].length;
+    h(`
+      <div class="qhead"><span><span class="tag" style="--tc:var(--ok)">✍️ 漢字で書く</span> <span class="small">${esc(cat ? cat.name : '')}${c ? (c.lapses ? '・前に書けなかった' : '') : '・初めて'}</span></span>
+        <span>${session.idx + 1} / ${total}</span></div>
+      <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
+      <div class="card">
+        <div class="qtext">${rich(maskHint(w.q, w.ans))}</div>
+        <div class="small">${len} 文字で書きましょう。${w.yomi ? `<button class="linkbtn" id="yomiBtn" type="button">読みを見る</button><span id="yomi" hidden>読み：<b>${esc(w.yomi)}</b></span>` : ''}</div>
+        <div class="pad" id="pad"><canvas id="guide" aria-hidden="true"></canvas><canvas id="ink" aria-label="ここに漢字を書く"></canvas></div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn ghost" id="undo" type="button">1 画もどす</button>
+          <button class="btn ghost" id="clear" type="button">ぜんぶ消す</button>
+        </div>
+        <div id="back" hidden>
+          <hr>
+          <div class="small">正しい漢字</div>
+          <div class="kanji-ans">${esc(w.ans)}</div>
+          ${w.yomi ? `<div class="small">${esc(w.yomi)}</div>` : ''}
+          ${w.exp ? `<div class="exp">${rich(w.exp)}</div>` : ''}
+          <p class="small" style="margin:8px 0 0">自分の字と見くらべましょう。1 画でもちがったら △ か × にします。</p>
+        </div>
+      </div>
+      <div id="act"><button class="btn wide" id="flip" type="button">答えを見る</button></div>`);
+    const pad = setupPad(len);
+    on('#undo', 'click', () => pad.undo());
+    on('#clear', 'click', () => pad.clear());
+    on('#yomiBtn', 'click', (e) => { e.currentTarget.hidden = true; $app.querySelector('#yomi').hidden = false; });
+    const grade = (g) => {
+      kSchedule(w, g);
+      logDay(g === 'ok', (Date.now() - shownAt) / 1000, 'card');
+      save();
+      session.results.push({ w, g });
+      session.idx++;
+      if (session.idx < total) kanjiShow(); else kanjiResult();
+    };
+    const flip = () => {
+      if (open) return;
+      open = true;
+      $app.querySelector('#back').hidden = false;
+      $app.querySelector('#act').innerHTML = `
+        <p class="small" style="margin:0 0 6px">正しく書けましたか？</p>
+        <div class="grade">
+          <button class="btn g-ng" data-gr="ng" type="button"><b>×</b>書けなかった</button>
+          <button class="btn g-hard" data-gr="hard" type="button"><b>△</b>おしい</button>
+          <button class="btn g-ok" data-gr="ok" type="button"><b>○</b>書けた</button>
+        </div>`;
+      onAll('[data-gr]', 'click', (e) => grade(e.currentTarget.dataset.gr));
+      $app.querySelector('#back').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+    on('#flip', 'click', flip);
+    setKeys((e) => {
+      if (!open && e.key === 'Enter') { e.preventDefault(); flip(); return; }
+      if (open) { const g = { 1: 'ng', 2: 'hard', 3: 'ok' }[e.key]; if (g) grade(g); }
+    });
+  }
+
+  function kanjiResult() {
+    session.done = true;
+    setKeys(null);
+    const rs = session.results;
+    const cnt = (g) => rs.filter((r) => r.g === g).length;
+    const weak = rs.filter((r) => r.g !== 'ok').map((r) => r.w);
+    h(`
+      <h1>✍️ ${esc(session.title)} の結果</h1>
+      <div class="card">
+        <div class="kpis">
+          <div class="kpi"><b>${cnt('ok')}</b><span>○ 書けた</span></div>
+          <div class="kpi"><b>${cnt('hard')}</b><span>△ おしい</span></div>
+          <div class="kpi"><b>${cnt('ng')}</b><span>× 書けなかった</span></div>
+        </div>
+        <p class="small" style="margin:8px 0 0">「×」は今日のうちに、「△」は近いうちに、「○」は数日〜数週間後にまた出ます。</p>
+      </div>
+      ${weak.length ? `<div class="card"><strong>練習したい言葉</strong>
+        <ul class="kanji-list">${weak.map((w) => `<li><span class="kanji-sm">${esc(w.ans)}</span><span class="small">${esc(w.yomi)}</span></li>`).join('')}</ul>
+        <p class="small" style="margin:6px 0 0">ノートに 3 回ずつ書いてから、もう一度ためしましょう。</p></div>` : ''}
+      <div class="row">
+        ${weak.length ? '<button class="btn" id="again" type="button">「×」「△」だけもう一度</button>' : ''}
+        <button class="btn sub" id="more" type="button">続けて書く</button>
+        <button class="btn ghost" id="home2" type="button">ホームへ</button>
+      </div>`);
+    on('#again', 'click', () => kanjiStart(shuffle(weak), session.title));
+    on('#more', 'click', () => kanjiHome());
     on('#home2', 'click', home);
   }
 
