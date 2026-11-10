@@ -211,6 +211,7 @@
 ## 開き方
 
 ```bash
+open start.html                 # 教科えらびの画面
 open index.html                 # 国語（そのまま開く）
 open shakai.html                # 社会
 open rika.html                  # 理科
@@ -230,8 +231,52 @@ GitHub Pages で公開すれば、URL を開くだけでどこからでも使え
 { cat: 'kanyo', lv: 2, q: '問題文', a: ['はな', '鼻'], exp: '解説' },
 ```
 
-`lv` は難易度（1＝基礎、2＝標準、3＝発展）。対義語・類義語は `ANTONYMS` / `SYNONYMS` に `['言葉', '言葉', 難易度]` を足すだけで出題に加わります。
+`lv` は難易度（2＝★★標準、3＝★★★発展。★ は使いません）。対義語・類義語は `ANTONYMS` / `SYNONYMS` に `['言葉', '言葉', 難易度]` を足すだけで出題に加わります。
 
 ```bash
 node tests/check.js   # 国語・社会・理科で、選択肢の重複・正解の有無・問題の重複などをチェック
 ```
+
+## VS Code で編集する
+
+1. [VS Code](https://code.visualstudio.com/) をインストールします。
+2. ZIP を展開し、VS Code の「ファイル → フォルダーを開く」で、展開したフォルダーを開きます。
+3. 右下に「おすすめの拡張機能」が出たら **Live Server** を入れます（`.vscode/extensions.json` で指定済み）。
+4. `start.html` を右クリック →「Open with Live Server」。保存するたびにブラウザが自動で更新されます。
+   （Live Server なしでも、`start.html` をダブルクリックすれば開けます）
+
+### どのファイルに何があるか
+
+| 内容 | ファイル |
+| --- | --- |
+| 教科えらびの画面 | `start.html` |
+| 国語の問題 | `js/data/kokugo.js` 〜 `kokugo4.js` |
+| 社会の問題 | `js/data/shakai.js`（分野の一覧）、`shakai3.js` 〜 `shakai8.js`（問題） |
+| 社会・年代の並べかえ | `js/data/shakai2.js` の `EVENTS`（`[年, できごと]`） |
+| 社会・漢字で書く | `js/data/shakai9.js` の `kanjiExtra`（`[分野, ヒント, 漢字, よみ, 解説]`） |
+| 理科の問題 | `js/data/rika.js`（分野の一覧）、`seibutsu.js` `chigaku.js` `butsuri.js` `kagaku.js` `jissen.js` `tsuika1.js` `tsuika2.js` `rika-moshi.js` |
+| 画面の動き（全教科共通） | `js/app.js` |
+| 見た目 | `css/style.css` |
+
+### 問題の書き方（社会・理科）
+
+```js
+// 選択式：c の先頭が正解（出題時にシャッフル）
+{ cat: 'tokai', lv: 2, q: '問題文', c: ['正解', 'ちがう', 'ちがう', 'ちがう'], exp: '解説' },
+// 記述式：a に正解として認める答え。漢字の答えは「書き取り」でも出題されます
+{ cat: 'kodai', lv: 3, q: '問題文', a: ['卑弥呼'], exp: '解説' },
+// すべて選ぶ：ok に正解（複数可）。問題文は「すべて選びなさい。」で終える
+{ cat: 'seiji', lv: 3, q: '〜をすべて選びなさい。', c: ['ア', 'イ', 'ウ', 'エ'], ok: ['ア', 'ウ'], exp: '解説' },
+```
+
+`cat` は各教科の分野一覧（`shakai.js` / `rika.js` の `cats`）にある id を使います。
+ファイルによっては `C(分野, 難易度, 問題, [正解, …], 解説)` のような短い書き方をしています（ファイルの先頭に説明があります）。
+
+### 編集したら
+
+```bash
+node tests/check.js   # Node.js が必要。最後に all ok と出れば OK
+```
+
+- 学習の記録はブラウザと開いたアドレスごとに保存されるため、claude.ai 上の記録はパソコンで開いたページには引きつがれません。必要なら「記録の書き出し／読みこみ」で移します。
+- 編集した内容を claude.ai の公開ページに反映するには、変更したファイルを Claude に送ってください。
