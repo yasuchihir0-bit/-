@@ -2,7 +2,7 @@
 const path = require('path');
 const load = (f) => require(path.join(__dirname, '..', 'js', f));
 load('util.js');
-load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/kokugo-jakuten.js'); load('data/kokugo5.js'); load('data/filter.js');
+load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/kokugo-jakuten.js'); load('data/kokugo5.js'); load('data/kokugo6.js'); load('data/filter.js');
 load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js"); load("data/shakai8.js"); load("data/shakai9.js"); load("data/shakai-jakuten.js");
 ["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2", "rika-moshi", "rika-jakuten"].forEach((f) => load(`data/${f}.js`));
 const { KOKUGO, SHAKAI, RIKA } = globalThis;
@@ -96,7 +96,7 @@ function checkSubject(S) {
   const text = S.bank.filter((b) => b.a).length;
   const multi = S.bank.filter((b) => b.ok).length;
   const nums = S.bank.filter((b) => b.n !== undefined).length;
-  const essays = S.bank.filter((b) => b.k !== undefined).length;
+  const essays = S.bank.filter((b) => b.k !== undefined && b.p).length;
   if (S.passages) console.log(`【${S.name}・長文読解】${Object.keys(S.passages).length} 文章・${S.bank.filter((b) => b.p).length} 問（記述・自己採点 ${essays}）`);
   const counts = S.cats.map((c) => `${c.name} ${c.gens ? `自動(${c.size ? c.size() : KOKUGO.ANTONYMS.length + KOKUGO.SYNONYMS.length}組)` : S.bank.filter((b) => b.cat === c.id).length}`);
   console.log(`【${S.name}】合計 ${S.bank.length} 問（★★${lv[0]} ★★★${lv[1]}・記述 ${text}・すべて選ぶ ${multi}${nums ? `・計算 ${nums}` : ''}）\n${counts.join(' / ')}`);
