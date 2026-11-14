@@ -2,9 +2,9 @@
 const path = require('path');
 const load = (f) => require(path.join(__dirname, '..', 'js', f));
 load('util.js');
-load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/filter.js');
-load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js"); load("data/shakai8.js"); load("data/shakai9.js");
-["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2", "rika-moshi"].forEach((f) => load(`data/${f}.js`));
+load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/kokugo-jakuten.js'); load('data/kokugo5.js'); load('data/filter.js');
+load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js"); load("data/shakai8.js"); load("data/shakai9.js"); load("data/shakai-jakuten.js");
+["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2", "rika-moshi", "rika-jakuten"].forEach((f) => load(`data/${f}.js`));
 const { KOKUGO, SHAKAI, RIKA } = globalThis;
 let fail = 0;
 const bad = (msg, q) => { fail++; if (fail < 40) console.error('NG:', msg, JSON.stringify(q).slice(0, 160)); };
@@ -49,7 +49,13 @@ function checkSubject(S) {
   for (const b of S.bank) {
     if (![2, 3].includes(b.lv)) bad(`${S.id}: level (★ は出題しない)`, b);
     if (!b.q || typeof b.exp !== 'string') bad(`${S.id}: question/exp`, b);
-    if (b.n !== undefined) {
+    if (b.k !== undefined) {
+      if (typeof b.k !== 'string' || !b.k || b.c || b.a || b.ok || !Array.isArray(b.pts) || !b.pts.length) bad('essay', b);
+      const lm = b.q.match(/([一二三四五六七八九十百]+)字以内/);
+      const kn2 = (t) => { let n = 0, cur = 0; for (const ch of t) { const d = '一二三四五六七八九'.indexOf(ch) + 1; if (d) cur = d; else if (ch === '十') { n += (cur || 1) * 10; cur = 0; } else if (ch === '百') { n += (cur || 1) * 100; cur = 0; } } return n + cur; };
+      if (lm && kn2(lm[1]) !== b.lim) bad(`essay lim ${b.lim} ≠ 問題文の ${lm[1]}字`, b);
+      if (b.lim && [...b.k].length > b.lim) bad(`essay model answer longer than lim (${[...b.k].length}>${b.lim})`, b);
+    } else if (b.n !== undefined) {
       if (typeof b.n !== 'number' || !Number.isFinite(b.n) || b.c || b.a) bad('num answer', b);
     } else if (b.a) {
       if (!Array.isArray(b.a) || !b.a.length || b.c || b.a.some((x) => !String(x).trim())) bad('text answer', b);
@@ -62,7 +68,24 @@ function checkSubject(S) {
       else if (new Set(b.c).size !== 4) bad('duplicate choices', b);
     }
     if (!S.cats.some((c) => c.id === b.cat)) bad('unknown cat', b);
-    const key = b.q + '|' + (b.n !== undefined ? b.n : b.a ? b.a[0] : b.ok ? b.ok.join('／') : b.c[0]);
+    if (b.p !== undefined || (S.cats.find((c) => c.id === b.cat) || {}).solo) {
+      const P = (S.passages || {})[b.p];
+      if (!P) bad('unknown passage', b);
+      else {
+        const plain = P.text.replace(/\[\[[^|\]]+\|([^\]]+)\]\]/g, '$1');
+        // 抜き出し：本文にそのままあり、字数が指定どおりか
+        if (b.a) {
+          if (!plain.includes(b.a[0])) bad('抜き出しの答えが本文にない', b);
+          const m = b.q.match(/([一二三四五六七八九十百]+)字で抜き出/);
+          const kn = (t) => { let n = 0, cur = 0; for (const ch of t) { const d = '一二三四五六七八九'.indexOf(ch) + 1; if (d) cur = d; else if (ch === '十') { n += (cur || 1) * 10; cur = 0; } else if (ch === '百') { n += (cur || 1) * 100; cur = 0; } } return n + cur; };
+          if (m && kn(m[1]) !== [...b.a[0]].length) bad(`抜き出しの字数 ${kn(m[1])} ≠ ${[...b.a[0]].length}`, b);
+        }
+        // ――線部の番号が本文にあるか
+        for (const mk of b.q.match(/線部[①-⑩]/g) || []) if (!P.text.includes(`[[${mk.slice(-1)}|`)) bad(`本文に ${mk} がない`, b);
+        for (const bl of b.q.match(/［[^］]+］/g) || []) if (!P.text.includes(bl.replace(/\s/g, '　').replace(/［　*/, '［').replace(/　*］/, '］')) && !P.text.includes(bl)) bad(`本文に空らん ${bl} がない`, b);
+      }
+    }
+    const key = b.q + '|' + (b.k !== undefined ? b.k : b.n !== undefined ? b.n : b.a ? b.a[0] : b.ok ? b.ok.join('／') : b.c[0]);
     if (seen.has(key)) bad('duplicate question', b);
     seen.add(key);
   }
@@ -73,6 +96,8 @@ function checkSubject(S) {
   const text = S.bank.filter((b) => b.a).length;
   const multi = S.bank.filter((b) => b.ok).length;
   const nums = S.bank.filter((b) => b.n !== undefined).length;
+  const essays = S.bank.filter((b) => b.k !== undefined).length;
+  if (S.passages) console.log(`【${S.name}・長文読解】${Object.keys(S.passages).length} 文章・${S.bank.filter((b) => b.p).length} 問（記述・自己採点 ${essays}）`);
   const counts = S.cats.map((c) => `${c.name} ${c.gens ? `自動(${c.size ? c.size() : KOKUGO.ANTONYMS.length + KOKUGO.SYNONYMS.length}組)` : S.bank.filter((b) => b.cat === c.id).length}`);
   console.log(`【${S.name}】合計 ${S.bank.length} 問（★★${lv[0]} ★★★${lv[1]}・記述 ${text}・すべて選ぶ ${multi}${nums ? `・計算 ${nums}` : ''}）\n${counts.join(' / ')}`);
 }

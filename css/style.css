@@ -340,3 +340,29 @@ h2 { font-size: 20px; margin: 20px 0 10px; }
 .pad-tools .seg { flex-wrap: nowrap; flex: none; }
 .pad-tools .seg button { white-space: nowrap; }
 @media (max-width: 340px) { .pad-tools { flex-wrap: wrap; } }
+
+/* 長文読解 */
+.passage { padding: 0; }
+.passage > summary { cursor: pointer; padding: 12px 14px; list-style: none; }
+.passage > summary::-webkit-details-marker { display: none; }
+.passage > summary::before { content: '▸ '; color: var(--muted); }
+.passage[open] > summary::before { content: '▾ '; }
+.passage .ptext {
+  max-height: 55vh; overflow-y: auto; overscroll-behavior: contain;
+  padding: 4px 16px 12px; border-top: 1px solid var(--line);
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", "BIZ UDPMincho", serif; font-size: 17px; line-height: 2;
+}
+.passage .ptext p { margin: 0.6em 0; text-indent: 1em; }
+.passage .pnote { padding: 0 16px 12px; margin: 0; }
+.bsen u { text-decoration-thickness: 2px; text-underline-offset: 5px; text-decoration-color: var(--c-mix); }
+.bno { font-family: var(--font, system-ui); font-size: 0.8em; color: var(--c-mix); font-weight: 700; margin-right: 1px; }
+textarea.essay {
+  width: 100%; font: inherit; font-size: 17px; line-height: 1.7; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); resize: vertical;
+}
+#ecount { text-align: right; margin-top: 2px; }
+#ecount.over { color: var(--ng); font-weight: 700; }
+.essay-ans { margin: 12px 0 4px; padding: 12px 14px; border-radius: 10px; background: color-mix(in srgb, var(--c-mix) 8%, transparent); }
+.essay-ans .model { font-size: 17px; line-height: 1.8; }
+.essay-ans .pts { margin: 4px 0 0; padding-left: 1.3em; }
+.ptile .tt { line-height: 1.5; }

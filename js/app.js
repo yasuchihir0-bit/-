@@ -34,7 +34,7 @@
   const lvOf = (x) => x.lv || 1;
   /* 計算問題（数値で答える）：n が正解の数、unit が単位 */
   const isNum = (item) => item.n !== undefined;
-  const ansOf = (item) => (isNum(item) ? `${item.n}${item.unit || ''}` : item.a ? item.a[0] : item.ok ? item.ok.join('／') : item.c[0]);
+  const ansOf = (item) => (isNum(item) ? `${item.n}${item.unit || ''}` : item.k ? item.k : item.a ? item.a[0] : item.ok ? item.ok.join('／') : item.c[0]);
   const bkey = (sid, item) => `${sid}|${item.q}|${ansOf(item)}`;
   const BANK = new Map();
   SUBJECTS.forEach((s) => (s.bank || []).forEach((item, idx) => {
@@ -128,6 +128,7 @@
     if (q.accept) o.accept = q.accept.slice();
     if (q.correct) o.correct = q.correct.slice();
     if (q.val) { o.val = { n: q.val.n, d: q.val.d }; o.unit = q.unit || ''; }
+    if (q.passage) o.passage = q.passage;
     return o;
   }
 
@@ -174,6 +175,8 @@
 
   function fromBank(subject, item, idx) {
     const base = { subject: subject.id, cat: item.cat, id: `${subject.id}-${idx}`, q: item.q, exp: item.exp, lv: lvOf(item) };
+    if (item.p) base.passage = item.p;
+    if (item.k) return Object.assign(base, { type: 'essay', ans: item.k, pts: (item.pts || []).slice(), lim: item.lim || 0 });
     if (isNum(item)) return Object.assign(base, { type: 'num', val: fromDecimal(String(item.n)), unit: item.unit || '', ans: ansOf(item) });
     if (item.a) return Object.assign(base, { type: 'text', ans: item.a[0], accept: item.a });
     if (item.ok) return Object.assign(base, { type: 'multi', choices: shuffle(item.c), correct: item.ok.slice(), ans: ansOf(item) });
@@ -252,7 +255,7 @@
   function dueList(cid) {
     const t = today();
     return Object.entries(store.cards)
-      .filter(([, c]) => c.due <= t && (!cid || c.cat === cid))
+      .filter(([, c]) => c.due <= t && (cid ? c.cat === cid : !SOLO.has(c.cat)))
       .sort((a, b) => a[1].box - b[1].box || a[1].due.localeCompare(b[1].due))
       .map(([k, c]) => fromCard(k, c))
       .filter(Boolean);
@@ -357,7 +360,8 @@
   }
   const stageLegend = () => `<div class="legend"><i class="m4"></i>覚えた<i class="m3"></i>もう少し<i class="m2"></i>にがて<i class="m0"></i>まだ</div>`;
 
-  const allTargets = () => K.cats.map((c) => ({ sid: K.id, cid: c.id }));
+  const allTargets = () => K.cats.filter((c) => !c.solo).map((c) => ({ sid: K.id, cid: c.id }));
+  const SOLO = new Set(K.cats.filter((c) => c.solo).map((c) => c.id));
   /* 新しい問題を n 問：半分を★★★、残りを★★〜★★★から */
   function freshSet(targets, n, exclude = new Set()) {
     const pickNew = (k, f) => buildSet(targets, k + 5, f).filter((q) => !exclude.has(qkey(q)));
@@ -389,7 +393,7 @@
     const done = todayCount(), G = goal();
     const st = streak();
     const nDue = Math.min(due, ROUND);
-    const all = allTargets().map((t) => mastery(t.cid)).reduce((a, m) => ({ total: a.total + m.total, master: a.master + m.master, fixed: a.fixed + m.fixed, learn: a.learn + m.learn, new: a.new + m.new }), { total: 0, master: 0, fixed: 0, learn: 0, new: 0 });
+    const all = K.cats.map((c) => mastery(c.id)).reduce((a, m) => ({ total: a.total + m.total, master: a.master + m.master, fixed: a.fixed + m.fixed, learn: a.learn + m.learn, new: a.new + m.new }), { total: 0, master: 0, fixed: 0, learn: 0, new: 0 });
     const first = !Object.keys(store.days).length;
     h(`
       <div class="card hero">
@@ -422,6 +426,10 @@
           <span class="ic">🏆</span><span class="tt">力だめし</span>
           <span class="ds">15 問のテスト。ふつうのテストと、東海中レベルのテスト。</span>
         </button>
+        ${PASSAGE_IDS.length ? `<button class="tile" style="--tc:var(--c-mix)" data-dokkai="1">
+          <span class="ic">📖</span><span class="tt">長文読解</span>
+          <span class="ds">説明文・物語文を読んで答える。理由・気持ち・抜き出し・記述（自己採点）。</span>
+        </button>` : ''}
         ${KANJI.length ? `<button class="tile" style="--tc:var(--ok)" data-kanji="1">
           <span class="ic">✍️</span><span class="tt">漢字で書く</span>
           <span class="ds">用語を指やペンで書いて練習。答えを見て、自分で ○・△・× をつけます。</span>
@@ -444,6 +452,7 @@
     on('[data-pick]', 'click', () => practice('quiz'));
     on('[data-test]', 'click', tests);
     on('[data-kanji]', 'click', () => kanjiHome());
+    on('[data-dokkai]', 'click', dokkaiHome);
     on('[data-stats]', 'click', analysis);
     on('[data-help]', 'click', help);
     if (!store.seenGuide) guide();
@@ -453,7 +462,7 @@
   function practice(mode) {
     reset();
     let level = 'all';
-    const tiles = K.cats.map((c) => {
+    const tiles = K.cats.filter((c) => !(c.solo && mode === 'flash')).map((c) => {
       const m = mastery(c.id);
       const d = dueList(c.id).length;
       return `<button class="tile" style="--tc:${mode === 'quiz' ? 'var(--accent)' : 'var(--ok)'}" data-c="${c.id}">
@@ -486,6 +495,7 @@
     onAll('[data-c]', 'click', (e) => {
       const cid = e.currentTarget.dataset.c;
       const name = catOf(K.id, cid).name;
+      if (SOLO.has(cid)) { dokkaiHome(); return; }
       if (mode === 'quiz') start(buildSet([{ sid: K.id, cid }], 10, LEVELS[level].f), name);
       else {
         const due = dueList(cid);
@@ -647,7 +657,7 @@
           <span class="row"><button class="btn ghost" id="all" type="button">すべて</button><button class="btn ghost" id="none" type="button">解除</button></span>
         </div>
         <div class="checks">
-          ${K.cats.map((c) => {
+          ${K.cats.filter((c) => !c.solo).map((c) => {
             const st = store.stats[`${K.id}:${c.id}`];
             const size = c.gens ? '自動で出題' : `${K.bank.filter((b) => b.cat === c.id).length} 問`;
             return `<label class="check"><input type="checkbox" value="${c.id}" checked>
@@ -706,7 +716,7 @@
   const NOT_TERM = /正しいもの|誤って|まちがって|適切なもの|組み合わせ|並べ|説明|理由|特ちょう|どうなり|どのよう|ものはどれ|ことはどれ|すべて選び|何年|何才|何件|何海里|何％|いくつ|数字/;
   function writeTermOf(q) {
     if (!KANJI.length || store.answerMode === 'choice') return null;
-    if (q.type !== 'choice' && q.type !== 'text') return null;
+    if (q.passage || (q.type !== 'choice' && q.type !== 'text')) return null;
     let w = q.type === 'text' ? q.accept[0] : q.ans;
     w = String(w).replace(/（.*?）$/, '').trim();
     if (!HAS_KANJI.test(w) || [...w].length > 10 || /[\s0-9０-９、。→―ー・「」『』,]/.test(w)) return null;
@@ -784,14 +794,19 @@
     const s = SUBJ[q.subject], cat = catOf(q.subject, q.cat);
     const total = session.questions.length;
     const card = store.cards[qkey(q)];
-    const body = q.type === 'text' || q.type === 'num'
+    const body = q.type === 'essay'
+      ? `<textarea id="essay" class="essay" rows="4" aria-label="記述の答え" placeholder="ここに書く（下書きでもよい）"></textarea>
+        <div class="small" id="ecount">${q.lim ? `0 / ${q.lim} 字` : '0 字'}</div>
+        <div class="hint">書けたら「答えを見る」。模範解答と採点のポイントを見て、自分で ○・△・× をつけます。</div>
+        <button class="btn wide" id="reveal" type="button">答えを見る</button>`
+      : q.type === 'text' || q.type === 'num'
       ? `<div class="answer-row">
           <input id="ans" type="text" ${q.type === 'num' ? 'inputmode="decimal" ' : ''}autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="答え" placeholder="${q.type === 'num' ? '数字で答える' : 'ここに書く'}">
           ${q.type === 'num' && q.unit ? `<span class="unit">${esc(q.unit)}</span>` : ''}
           <button class="btn" id="submitText" type="button">答える</button>
         </div>
         <div class="err" id="err"></div>
-        <div class="hint">${q.type === 'num' ? '計算：数字だけで OK（単位はいりません）。小数でも分数（1/2 など）でもかまいません。' : esc(APP.textHint)}</div>`
+        <div class="hint">${q.type === 'num' ? '計算：数字だけで OK（単位はいりません）。小数でも分数（1/2 など）でもかまいません。' : q.passage ? '本文の言葉を、そのまま書きぬきます（句読点やかぎかっこはなくてもかまいません）。' : esc(APP.textHint)}</div>`
       : q.type === 'multi'
       ? `<div class="multi-note">✅ あてはまるものを<b>すべて</b>選んでから「答える」を押してください。</div>
         <div class="choices">${q.choices.map((c, i) => `<button class="choice mchoice" type="button" data-i="${i}" aria-pressed="false"><span class="no">${i + 1}</span><span>${rich(c)}</span></button>`).join('')}</div>
@@ -799,9 +814,10 @@
         <button class="btn wide" id="submitMulti" type="button">答える</button>`
       : `<div class="choices">${q.choices.map((c, i) => `<button class="choice" type="button" data-i="${i}"><span class="no">${i + 1}</span><span>${rich(c)}</span></button>`).join('')}</div>`;
     h(`
-      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${esc(cat ? cat.name : s.name)}</span> <span class="lv" title="難易度">${stars(q.lv || 1)}</span>${q.type === 'text' ? ' <span class="small">記述</span>' : q.type === 'num' ? ' <span class="small">計算</span>' : q.type === 'multi' ? ' <span class="small">すべて選ぶ</span>' : ''}${card ? (card.lapses ? ` <span class="small">・前にまちがえた</span>` : '') : ' <span class="small">・初めて</span>'}</span>
+      <div class="qhead"><span><span class="tag" style="--tc:${s.color}">${esc(cat ? cat.name : s.name)}</span> <span class="lv" title="難易度">${stars(q.lv || 1)}</span>${q.type === 'essay' ? ' <span class="small">記述（自己採点）</span>' : q.type === 'text' ? ` <span class="small">${q.passage ? '抜き出し' : '記述'}</span>` : q.type === 'num' ? ' <span class="small">計算</span>' : q.type === 'multi' ? ' <span class="small">すべて選ぶ</span>' : ''}${card ? (card.lapses ? ` <span class="small">・前にまちがえた</span>` : '') : ' <span class="small">・初めて</span>'}</span>
         <span>${session.idx + 1} / ${total}　⏱ <span id="clock">${elapsed()}</span></span></div>
       <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
+      ${q.passage ? passageBox(q.passage) : ''}
       <div class="card">
         <div class="qtext">${rich(q.q)}</div>
         <div id="input">${body}</div>
@@ -817,16 +833,23 @@
 
     const shownAt = Date.now();
     let answered = false;
-    const finish = (ok, given) => {
+    const finish = (ok, given, g) => {
       if (answered) return;
       answered = true;
       session.results.push({ q, ok, given });
-      record(q, ok, (Date.now() - shownAt) / 1000);
+      record(q, ok, (Date.now() - shownAt) / 1000, g);
       const c = store.cards[qkey(q)];
       const nextTxt = c.box === 0 ? 'このあと「今日の復習」でもう一度出ます。' : `次の復習：${md(c.due)}（${INTERVALS[c.box]} 日後）`;
       $app.querySelector('#skip').hidden = true;
       const nb = $app.querySelector('#next');
       nb.hidden = false;
+      if (q.type === 'essay') {
+        $app.querySelector('#fb').innerHTML = `<div class="feedback ${ok ? 'ok' : 'ng'}"><div class="mark">${esc(given || '× わからない')}</div><div class="small" style="margin-top:8px">${nextTxt}</div></div>`;
+        if (given == null) $app.querySelector('#fb').insertAdjacentHTML('afterbegin', essayAnswer(q));
+        $app.querySelectorAll('#input button, #input textarea').forEach((el) => { el.disabled = true; });
+        nb.focus();
+        return;
+      }
       $app.querySelector('#fb').innerHTML = `
         <div class="feedback ${ok ? 'ok' : 'ng'}">
           <div class="mark">${ok ? '⭕ 正解！' : '❌ ざんねん'}</div>
@@ -846,7 +869,37 @@
     on('#next', 'click', next);
     on('#skip', 'click', () => finish(false, null));
 
-    if (q.type === 'choice') {
+    wirePassage();
+    if (q.type === 'essay') {
+      const ta = $app.querySelector('#essay'), cnt = $app.querySelector('#ecount');
+      ta.addEventListener('input', () => {
+        const n = [...ta.value.replace(/\s/g, '')].length;
+        cnt.textContent = q.lim ? `${n} / ${q.lim} 字` : `${n} 字`;
+        cnt.classList.toggle('over', !!q.lim && n > q.lim);
+      });
+      const LABEL = { ok: '○ よく書けた', hard: '△ 部分的に書けた', ng: '× 書けなかった' };
+      let opened = false;
+      const reveal = () => {
+        if (opened || answered) return;
+        opened = true;
+        ta.readOnly = true;
+        const rb = $app.querySelector('#reveal');
+        rb.insertAdjacentHTML('beforebegin', `${essayAnswer(q)}
+          <p class="small" style="margin:10px 0 6px">ポイントがそろっていれば ○、一部だけなら △ にします。</p>
+          <div class="grade">
+            <button class="btn g-ng" data-gr="ng" type="button"><b>×</b>書けなかった</button>
+            <button class="btn g-hard" data-gr="hard" type="button"><b>△</b>部分的</button>
+            <button class="btn g-ok" data-gr="ok" type="button"><b>○</b>よく書けた</button>
+          </div>`);
+        rb.remove();
+        onAll('[data-gr]', 'click', (e) => { const g = e.currentTarget.dataset.gr; finish(g === 'ok', LABEL[g], g); });
+      };
+      on('#reveal', 'click', reveal);
+      setKeys((e) => {
+        if (answered) { if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); next(); } return; }
+        if (opened && e.target.tagName !== 'TEXTAREA') { const g = { 1: 'ng', 2: 'hard', 3: 'ok' }[e.key]; if (g) $app.querySelector(`[data-gr="${g}"]`).click(); }
+      });
+    } else if (q.type === 'choice') {
       onAll('.choice', 'click', (e) => {
         const btn = e.currentTarget;
         const given = q.choices[+btn.dataset.i];
@@ -903,6 +956,65 @@
       });
       if (window.matchMedia('(min-width: 700px)').matches) input.focus();
     }
+  }
+
+  /* ───────── 長文読解 ───────── */
+  const PASSAGES = K.passages || {};
+  const PASSAGE_IDS = Object.keys(PASSAGES);
+  const pQuestions = (pid) => K.bank.map((item, idx) => ({ item, idx })).filter((x) => x.item.p === pid);
+  /* 本文の書き方：[[①|線を引く部分]]、［Ａ］などの空らんはそのまま */
+  const pRich = (t) => rich(t).replace(/\[\[([^|\]]+)\|([^\]]+)\]\]/g, '<span class="bsen"><span class="bno">$1</span><u>$2</u></span>');
+  const pLen = (pid) => [...PASSAGES[pid].text.replace(/\[\[[^|\]]+\|([^\]]+)\]\]/g, '$1').replace(/\s/g, '')].length;
+  let pOpen = true;
+  function passageBox(pid) {
+    const P = PASSAGES[pid];
+    if (!P) return '';
+    return `<details class="passage card" ${pOpen ? 'open' : ''}>
+      <summary><span class="tag" style="--tc:var(--c-mix)">${esc(P.kind)}</span> <b>${esc(P.title)}</b> <span class="small">（本文 約 ${Math.round(pLen(pid) / 100) * 100} 字・タップで${pOpen ? 'たたむ' : 'ひらく'}）</span></summary>
+      <div class="ptext">${P.text.trim().split(/\n+/).map((para) => `<p>${pRich(para)}</p>`).join('')}</div>
+      ${P.note ? `<p class="small pnote">${esc(P.note)}</p>` : ''}
+    </details>`;
+  }
+  function wirePassage() {
+    const d = $app.querySelector('details.passage');
+    if (!d) return;
+    d.addEventListener('toggle', () => {
+      pOpen = d.open;
+      const sm = d.querySelector('summary .small');
+      if (sm) sm.textContent = sm.textContent.replace(/たたむ|ひらく/, pOpen ? 'たたむ' : 'ひらく');
+    });
+  }
+  const essayAnswer = (q) => `<div class="essay-ans">
+      <div class="exp-title">解答例</div><div class="model">${rich(q.ans)}</div>
+      ${q.pts.length ? `<div class="exp-title">採点のポイント</div><ul class="pts">${q.pts.map((x) => `<li>${rich(x)}</li>`).join('')}</ul>` : ''}
+    </div>`;
+
+  function dokkaiHome() {
+    reset();
+    const t = today();
+    const rows = PASSAGE_IDS.map((pid) => {
+      const P = PASSAGES[pid], qs = pQuestions(pid);
+      const m = { total: qs.length, new: 0, learn: 0, fixed: 0, master: 0 };
+      let due = 0;
+      qs.forEach(({ item }) => { const c = store.cards[bkey(K.id, item)]; m[stageOf(c)]++; if (c && c.due <= t) due++; });
+      return `<button class="tile ptile" style="--tc:var(--c-mix)" data-p="${esc(pid)}">
+        <span class="tt"><span class="tag" style="--tc:var(--c-mix)">${esc(P.kind)}</span> ${esc(P.title)}</span>
+        ${masteryBar(m, P.title, false)}
+        <span class="badge">約 ${Math.round(pLen(pid) / 100) * 100} 字・${qs.length} 問${due ? `・🔁 復習 ${due}` : m.new === m.total ? '・まだ' : `・覚えた ${m.master}／${m.total}`}</span>
+      </button>`;
+    }).join('');
+    h(`
+      <h1>📖 長文読解</h1>
+      <p class="lead">本文を読んで、順番に答えます（★★★ 東海中レベル）。本文は問題の上にいつでも出ています。記述問題は、解答例と採点のポイントを見て、自分で ○・△・× をつけます。</p>
+      <p class="small">コツ：先に設問をざっと見てから本文を読むと、どこに注意すればよいかがわかります。理由を聞かれたら「〜から。」、気持ちを聞かれたら「〜気持ち。」で終えましょう。</p>
+      ${stageLegend()}
+      <div class="grid cats">${rows}</div>
+      <p class="small">文章はすべてこのアプリのために書いたものです。復習の日が来た文章には 🔁 が出ます。もう一度通して解き直しましょう。</p>`);
+    onAll('[data-p]', 'click', (e) => {
+      const pid = e.currentTarget.dataset.p;
+      pOpen = true;
+      start(pQuestions(pid).map(({ item, idx }) => fromBank(K, item, idx)), PASSAGES[pid].title);
+    });
   }
 
   /* ───────── 結果 ───────── */
@@ -1051,7 +1163,7 @@
     const list = [], seen = new Set();
     const add = (w) => { if (!w.ans || seen.has(w.ans)) return; seen.add(w.ans); w.key = w.ans; list.push(w); };
     (K.bank || []).forEach((b) => {
-      if (b.a && HAS_KANJI.test(b.a[0])) add({ cat: b.cat, lv: lvOf(b), q: b.q, ans: b.a[0], yomi: b.a.find((x) => KANA_ONLY.test(x)) || '', exp: b.exp || '' });
+      if (b.a && !b.p && HAS_KANJI.test(b.a[0])) add({ cat: b.cat, lv: lvOf(b), q: b.q, ans: b.a[0], yomi: b.a.find((x) => KANA_ONLY.test(x)) || '', exp: b.exp || '' });
     });
     (K.kanjiExtra || []).forEach(([cat, q, ans, yomi, exp]) => add({ cat, lv: 2, q, ans, yomi: yomi || '', exp: exp || '' }));
     return list.filter((w) => catOf(K.id, w.cat));
