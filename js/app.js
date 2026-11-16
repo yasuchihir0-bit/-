@@ -1693,7 +1693,7 @@
   /* スマホで受け口を作るときの説明（スマホでは開いた状態で出す） */
   const isPhone = () => { try { return window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600; } catch (e) { return false; } };
   const phoneTip = (html) => `<details class="wz-phone"${isPhone() ? ' open' : ''}><summary>📱 スマホのとき</summary><div class="small">${html}</div></details>`;
-  const DESKTOP_HOW = '<b>iPhone（Safari）</b>：アドレス欄の左の「ぁあ」（または「⋯」）→「デスクトップ用 Web サイトを表示」<br><b>Android（Chrome）</b>：右上の「︙」→「PC 版サイト」にチェック';
+  const DESKTOP_HOW = '<b>iPhone（Safari）</b>：<b>設定アプリ</b> →「アプリ」→「Safari」（古い iOS では、設定の一覧の「Safari」）→「Web サイトの設定」の<b>「デスクトップ用 Web サイトを表示」をオン</b>にして、Safari にもどります（受け口ができたらオフにもどします）。LINE などのアプリの中で開いているときは、先に「Safari で開く」を選びます。<br><b>Android（Chrome）</b>：右上の「︙」→「PC 版サイト」にチェック';
   function sheetWizard(step = 1, mode = 'new') {
     reset();
     let d;
