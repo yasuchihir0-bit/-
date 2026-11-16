@@ -43,7 +43,8 @@
 
   /* ───────── 保存（この端末のブラウザ内のみ） ───────── */
   const KEY = APP.key;
-  const blank = () => ({ version: 2, stats: {}, cards: {}, kanji: {}, days: {}, lvs: {}, sessions: 0 });
+  const LOG_MAX = 400, IMG_KEEP = 30; // まちがいの記録の上限・手書き画像を残す件数
+  const blank = () => ({ version: 2, stats: {}, cards: {}, kanji: {}, days: {}, lvs: {}, log: [], sessions: 0 });
   let store = blank();
   try {
     const raw = localStorage.getItem(KEY);
@@ -89,6 +90,17 @@
       if (isDate(c.last)) card.last = c.last;
       out.kanji[k] = card;
     });
+    // まちがえた問題の記録（保護者画面用）
+    if (Array.isArray(d.log)) {
+      d.log.slice(-LOG_MAX).forEach((e) => {
+        if (!e || typeof e !== 'object' || !cats.has(e.cat) || !isDate(e.d) || typeof e.q !== 'string') return;
+        const o = { d: e.d, t: /^\d{2}:\d{2}$/.test(e.t) ? e.t : '', cat: e.cat, q: str(e.q), ans: str(e.ans, 500), g: e.g === 'hard' ? 'hard' : 'ng', m: ['quiz', 'write', 'essay', 'card', 'kanji'].includes(e.m) ? e.m : 'quiz' };
+        if (typeof e.given === 'string') o.given = str(e.given, 600);
+        if (typeof e.exp === 'string' && e.exp) o.exp = str(e.exp);
+        if (typeof e.img === 'string' && e.img.length < 40000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(e.img)) o.img = e.img;
+        out.log.push(o);
+      });
+    }
     out.sessions = int(d.sessions);
     if ([10, 20, 30, 50].includes(+d.goal)) out.goal = +d.goal;
     if (d.answerMode === 'choice') out.answerMode = 'choice';
@@ -97,7 +109,49 @@
     if (Array.isArray(d.wrong)) out.wrong = d.wrong.filter((q) => q && typeof q === 'object' && cats.has(q.cat) && typeof q.q === 'string');
     return out;
   }
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* noop */ } };
+  const save = () => {
+    try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {
+      // 容量がいっぱいのときは、手書きの画像を消してもう一度保存する
+      try { (store.log || []).forEach((x) => { delete x.img; }); localStorage.setItem(KEY, JSON.stringify(store)); } catch (e2) { /* noop */ }
+    }
+  };
+
+  /* ───────── まちがえた問題の記録（保護者画面で見る） ─────────
+   * g: 'ng'（まちがい・書けなかった）/ 'hard'（△）  m: quiz / write（書き取り）/ essay（記述）/ card（暗記カード）/ kanji（漢字で書く）
+   * given: 答えた内容（null は「わからない」）。img: 手書きの画像（新しい IMG_KEEP 件だけ残す） */
+  function logMiss(q, g, m, given, img) {
+    const now = new Date();
+    const e = { d: today(), t: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`, cat: q.cat, q: String(q.q).slice(0, 2000), ans: String(q.ans).slice(0, 500), g, m };
+    if (given != null) e.given = String(given).slice(0, 600);
+    if (q.exp && !BANK.has(`${K.id}|${q.q}|${q.ans}`)) e.exp = String(q.exp).slice(0, 2000);
+    if (img) e.img = img;
+    if (!Array.isArray(store.log)) store.log = [];
+    store.log.push(e);
+    if (store.log.length > LOG_MAX) store.log.splice(0, store.log.length - LOG_MAX);
+    let kept = 0;
+    for (let i = store.log.length - 1; i >= 0; i--) if (store.log[i].img && ++kept > IMG_KEEP) delete store.log[i].img;
+    save();
+  }
+  /* 手書きを小さな画像にする（どの画面の色でも読めるよう、こい灰色の線にそろえる） */
+  function padImage() {
+    try {
+      const ink = $app.querySelector('#ink');
+      if (!ink || !ink.width) return null;
+      const k = Math.min(1, 320 / ink.width);
+      const c = document.createElement('canvas');
+      c.width = Math.round(ink.width * k); c.height = Math.round(ink.height * k);
+      const x = c.getContext('2d');
+      x.drawImage(ink, 0, 0, c.width, c.height);
+      const px = x.getImageData(0, 0, c.width, c.height).data;
+      let any = false;
+      for (let i = 3; i < px.length; i += 4) if (px[i] > 20) { any = true; break; }
+      if (!any) return null;
+      x.globalCompositeOperation = 'source-in';
+      x.fillStyle = '#222'; x.fillRect(0, 0, c.width, c.height);
+      const url = c.toDataURL('image/png');
+      return url.length < 40000 ? url : null;
+    } catch (e) { return null; }
+  }
 
   /* 旧バージョンの「まちがえた問題」を復習カードに引き継ぐ */
   if (Array.isArray(store.wrong)) {
@@ -445,7 +499,7 @@
         ${stageLegend()}
         <p class="small" style="margin:4px 0 0">覚えた <b>${all.master}</b>・もう少し <b>${all.fixed}</b>・にがて <b>${all.learn}</b>・まだ <b>${all.new}</b></p>
       </div>
-      <p class="small center"><button class="linkbtn" data-help="1" type="button">❓ 使い方を見る</button></p>
+      <p class="small center"><button class="linkbtn" data-help="1" type="button">❓ 使い方を見る</button>　<button class="linkbtn" data-parents="1" type="button">👪 保護者の方へ</button></p>
       ${APP.links.length ? `<p class="small center">ほかの教科：${APP.links.map((l) => `<a class="linkbtn" href="${esc(l.href)}">${esc(l.label)}</a>`).join('・')}</p>` : ''}
       <p class="small center notice">このアプリは東海中学校の公式のものではありません。学校とは関係のない、受験勉強用の非公式アプリです。</p>`);
     on('[data-daily]', 'click', startDaily);
@@ -455,6 +509,7 @@
     on('[data-dokkai]', 'click', dokkaiHome);
     on('[data-stats]', 'click', analysis);
     on('[data-help]', 'click', help);
+    on('[data-parents]', 'click', () => parents());
     if (!store.seenGuide) guide();
   }
 
@@ -622,6 +677,11 @@
         <p class="small" style="margin:8px 0 0">記録はこの端末のブラウザに保存されます。別の端末に移すときは 📊 のページの「記録を書き出す」を使ってください。</p>
       </div>
       <div class="card">
+        <h2 style="margin-top:0">👪 保護者の方へ</h2>
+        <p style="margin:0 0 10px">お子さんがまちがえた問題と、そのとき答えた内容を一覧で見られます。</p>
+        <button class="btn sub" data-parents="1" type="button">保護者画面をひらく</button>
+      </div>
+      <div class="card">
         <h2 style="margin-top:0">このアプリについて</h2>
         <ul class="steps" style="padding-left:1.2em">
           <li>東海中学校の<b>公式のアプリではありません</b>。学校とは関係のない、受験勉強用の非公式アプリです。出題の傾向やむずかしさは、公開されている情報をもとにした目安です。</li>
@@ -636,6 +696,7 @@
       save();
       $app.querySelectorAll('[data-am]').forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.am === 'choice') === (store.answerMode === 'choice'))));
     });
+    on('[data-parents]', 'click', () => parents());
     onAll('[data-goal]', 'click', (e) => {
       store.goal = +e.currentTarget.dataset.goal; save();
       $app.querySelectorAll('[data-goal]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.goal === store.goal)));
@@ -761,6 +822,7 @@
       if (done) return;
       done = true;
       const ok = g === 'ok';
+      if (!ok) logMiss(Object.assign({}, q, { q: asWriteQ(q.q), ans: term }), g, 'write', '', padImage());
       session.results.push({ q, ok, given: `書き取り：${LABEL[g]}` });
       record(q, ok, (Date.now() - shownAt) / 1000, g);
       session.idx++;
@@ -833,11 +895,12 @@
 
     const shownAt = Date.now();
     let answered = false;
-    const finish = (ok, given, g) => {
+    const finish = (ok, given, g, note) => {
       if (answered) return;
       answered = true;
       session.results.push({ q, ok, given });
       record(q, ok, (Date.now() - shownAt) / 1000, g);
+      if (!ok) logMiss(q, g === 'hard' ? 'hard' : 'ng', q.type === 'essay' ? 'essay' : 'quiz', q.type === 'essay' ? (given == null ? null : (note || '（何も書かなかった）')) : given);
       const c = store.cards[qkey(q)];
       const nextTxt = c.box === 0 ? 'このあと「今日の復習」でもう一度出ます。' : `次の復習：${md(c.due)}（${INTERVALS[c.box]} 日後）`;
       $app.querySelector('#skip').hidden = true;
@@ -892,7 +955,7 @@
             <button class="btn g-ok" data-gr="ok" type="button"><b>○</b>よく書けた</button>
           </div>`);
         rb.remove();
-        onAll('[data-gr]', 'click', (e) => { const g = e.currentTarget.dataset.gr; finish(g === 'ok', LABEL[g], g); });
+        onAll('[data-gr]', 'click', (e) => { const g = e.currentTarget.dataset.gr; finish(g === 'ok', LABEL[g], g, ta.value.trim()); });
       };
       on('#reveal', 'click', reveal);
       setKeys((e) => {
@@ -1102,6 +1165,7 @@
       </div>`);
     const grade = (g) => {
       schedule(q, g);
+      if (g === 'ng') logMiss(q, 'ng', 'card', '');
       logDay(g === 'ok', (Date.now() - shownAt) / 1000, 'card');
       save();
       session.results.push({ q, g });
@@ -1372,6 +1436,7 @@
     wirePad(len);
     on('#yomiBtn', 'click', (e) => { e.currentTarget.hidden = true; $app.querySelector('#yomi').hidden = false; });
     const grade = (g) => {
+      if (g !== 'ok') logMiss(w, g, 'kanji', '', padImage());
       kSchedule(w, g);
       logDay(g === 'ok', (Date.now() - shownAt) / 1000, 'card');
       save();
@@ -1427,6 +1492,91 @@
     on('#again', 'click', () => kanjiStart(shuffle(weak), session.title));
     on('#more', 'click', () => kanjiHome());
     on('#home2', 'click', home);
+  }
+
+  /* ───────── 保護者画面：まちがえた問題と、答えた内容 ───────── */
+  const P_RANGES = { today: ['今日', 0], week: ['7 日間', 6], month: ['30 日間', 29], all: ['すべて', null] };
+  const P_MODE = { quiz: 'クイズ', write: '書き取り', essay: '記述', card: '暗記カード', kanji: '漢字で書く' };
+  function parents(range = 'week', cid = '', shown = 30) {
+    reset();
+    const T = today();
+    const from = P_RANGES[range][1] == null ? '' : addDays(T, -P_RANGES[range][1]);
+    const inRange = (store.log || []).filter((e) => e.d >= from && catOf(K.id, e.cat));
+    const list = inRange.filter((e) => !cid || e.cat === cid).slice().reverse();
+    // 期間内の学習量
+    const dsum = Object.entries(store.days).filter(([d]) => d >= from).reduce((a, [, v]) => ({ n: a.n + v.n, ok: a.ok + v.ok, cards: a.cards + (v.cards || 0) }), { n: 0, ok: 0, cards: 0 });
+    const byCat = {};
+    inRange.forEach((e) => { byCat[e.cat] = (byCat[e.cat] || 0) + 1; });
+    const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+    const maxC = catRows.length ? catRows[0][1] : 1;
+    // 同じ問題を何回まちがえたか（記録に残っている分）
+    const times = {};
+    (store.log || []).forEach((e) => { const k = `${e.q}|${e.ans}`; times[k] = (times[k] || 0) + 1; });
+    const given = (e) => {
+      if (e.img) return `<img class="p-img" src="${e.img}" alt="お子さんが書いた字">`;
+      if (e.m === 'write' || e.m === 'kanji') return `<span class="small">（手書き。画像は新しい ${IMG_KEEP} 件だけ残ります）</span>`;
+      if (e.m === 'card') return '<span class="small">（暗記カード：頭の中で答える形式）</span>';
+      if (e.given === undefined) return '<b class="p-none">「わからない」を選んだ</b>';
+      return `<span class="p-given">${rich(e.given)}</span>`;
+    };
+    const verdict = (e) => (e.g === 'hard' ? '△ おしい（自己採点）'
+      : e.m === 'card' ? '× 思い出せなかった（自己採点）'
+      : e.m === 'write' || e.m === 'kanji' || e.m === 'essay' ? '× 書けなかった（自己採点）' : '× まちがい');
+    const now = (e) => {
+      const c = e.m === 'kanji' ? store.kanji[e.ans] : store.cards[`${K.id}|${e.q}|${e.ans}`];
+      if (!c) return '';
+      return c.box >= 2 ? '<span class="p-now ok">その後、復習で正解</span>' : c.box === 1 ? '<span class="p-now">その後 1 回正解</span>' : '<span class="p-now ng">まだ復習中</span>';
+    };
+    const expOf = (e) => { const b = BANK.get(`${K.id}|${e.q}|${e.ans}`); return e.exp || (b && b.item.exp) || ''; };
+    const psg = (e) => { const b = BANK.get(`${K.id}|${e.q}|${e.ans}`); const P = b && b.item.p && PASSAGES[b.item.p]; return P ? `<div class="small">文章：${esc(P.kind)}「${esc(P.title)}」</div>` : ''; };
+    const items = list.slice(0, shown).map((e) => {
+      const n = times[`${e.q}|${e.ans}`];
+      return `<li class="p-item">
+        <div class="p-head"><span><span class="tag" style="--tc:${K.color}">${esc(catOf(K.id, e.cat).name)}</span> <span class="small">${md(e.d)} ${esc(e.t)}・${P_MODE[e.m]}</span></span>
+          <span class="small">${n > 1 ? `<b class="p-rep">${n} 回目</b> ` : ''}${now(e)}</span></div>
+        ${psg(e)}
+        <div class="p-q">${rich(e.q)}</div>
+        <dl class="p-ans">
+          <dt>正解</dt><dd><strong>${rich(e.ans)}</strong></dd>
+          <dt>答えた内容</dt><dd>${given(e)}<div class="small p-verdict ${e.g === 'hard' ? 'hard' : 'ng'}">${verdict(e)}</div></dd>
+        </dl>
+        ${expOf(e) ? `<details><summary class="small">解説を見る</summary><div class="exp">${rich(expOf(e))}</div></details>` : ''}
+      </li>`;
+    }).join('');
+    h(`
+      <h1>👪 保護者画面</h1>
+      <p class="lead">${esc(K.name)}で、お子さんがまちがえた問題と、そのとき答えた内容です。新しいものから順に出ます。</p>
+      <div class="row" style="margin-bottom:10px"><span class="small">期間</span>
+        <div class="seg" role="group" aria-label="期間">${Object.entries(P_RANGES).map(([k, v]) => `<button type="button" data-r="${k}" aria-pressed="${k === range}">${v[0]}</button>`).join('')}</div></div>
+      <div class="kpis big">
+        <div class="kpi"><b>${dsum.n + dsum.cards}</b><span>解いた数（問・枚）</span></div>
+        <div class="kpi"><b>${dsum.n ? pct(dsum.ok, dsum.n) + '%' : '—'}</b><span>クイズの正答率</span></div>
+        <div class="kpi"><b>${inRange.length}</b><span>まちがい（△をふくむ）</span></div>
+      </div>
+      ${catRows.length ? `<div class="card">
+        <strong>分野ごとのまちがい</strong> <span class="small">（タップでしぼりこみ）</span>
+        <div style="margin-top:8px">${catRows.map(([c, n]) => `<button type="button" class="stat-row p-cat" data-pc="${c}" aria-pressed="${c === cid}"><span>${esc(catOf(K.id, c).name)}</span><span class="bar"><i style="width:${(n / maxC) * 100}%"></i></span><span class="pc">${n} 件</span></button>`).join('')}</div>
+        ${cid ? '<p class="small" style="margin:8px 0 0"><button class="linkbtn" data-pc="" type="button">しぼりこみをやめる</button></p>' : ''}
+      </div>` : ''}
+      <div class="card">
+        <strong>まちがえた問題${cid ? `（${esc(catOf(K.id, cid).name)}）` : ''}：${list.length} 件</strong>
+        ${list.length ? `<ul class="p-list">${items}</ul>${list.length > shown ? `<button class="btn sub wide" id="pmore" type="button">さらに表示（残り ${list.length - shown} 件）</button>` : ''}`
+          : `<p class="small" style="margin:8px 0 0">${(store.log || []).length ? 'この期間・分野には、まちがいの記録がありません。' : 'まだ記録がありません。この画面ができたあとに解いた問題から記録されます。'}</p>`}
+      </div>
+      <div class="card">
+        <strong>この画面について</strong>
+        <ul class="steps small" style="padding-left:1.2em;margin-top:6px">
+          <li>クイズは、えらんだ選択肢や入力した答えをそのまま表示します。</li>
+          <li>手書き（書き取り・漢字で書く）は、書いた字の画像を新しい ${IMG_KEEP} 件まで残します。記述・手書き・暗記カードは、お子さん自身がつけた ○・△・× です。</li>
+          <li>記録は新しい ${LOG_MAX} 件まで、この端末のブラウザにだけ保存されます。${APP.links.length ? 'ほかの教科は、それぞれの教科の保護者画面で見られます。' : ''}</li>
+        </ul>
+        ${APP.links.length ? `<p class="small" style="margin:6px 0 0">ほかの教科：${APP.links.map((l) => `<a class="linkbtn" href="${esc(l.href)}">${esc(l.label)}</a>`).join('・')}</p>` : ''}
+        ${(store.log || []).length ? '<p style="margin:10px 0 0"><button class="btn ghost" id="pclear" type="button">まちがいの記録を消す</button></p>' : ''}
+      </div>`);
+    onAll('[data-r]', 'click', (e) => parents(e.currentTarget.dataset.r, cid));
+    onAll('[data-pc]', 'click', (e) => { const c = e.currentTarget.dataset.pc; parents(range, c === cid ? '' : c); });
+    on('#pmore', 'click', () => { const y = window.scrollY; parents(range, cid, shown + 30); window.scrollTo(0, y); });
+    on('#pclear', 'click', () => ask('まちがいの記録（この画面の一覧）を消しますか？\n学習の記録や復習の予定は消えません。', { ok: '消す' }).then((y) => { if (y) { store.log = []; save(); parents(range); } }));
   }
 
   /* ───────── 分析 ───────── */
@@ -1556,7 +1706,7 @@
     });
     /* 書き出し：ファイルに保存できない環境もあるので、文字としてコピーもできるようにする */
     on('#export', 'click', () => {
-      const json = JSON.stringify(store);
+      const json = JSON.stringify(store, (k, v) => (k === 'img' ? undefined : v));
       try {
         const blob = new Blob([json], { type: 'application/json' });
         const a = document.createElement('a');

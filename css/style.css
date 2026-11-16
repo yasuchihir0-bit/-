@@ -366,3 +366,23 @@ textarea.essay {
 .essay-ans .model { font-size: 17px; line-height: 1.8; }
 .essay-ans .pts { margin: 4px 0 0; padding-left: 1.3em; }
 .ptile .tt { line-height: 1.5; }
+
+/* 保護者画面 */
+.p-list { list-style: none; padding: 0; margin: 10px 0 0; }
+.p-item { border-top: 1px solid var(--line); padding: 14px 0; }
+.p-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 8px; margin-bottom: 6px; }
+.p-q { white-space: pre-line; overflow-wrap: anywhere; margin: 4px 0 8px; }
+.p-ans { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+.p-ans dt { font-size: 13px; color: var(--muted); padding-top: 2px; }
+.p-ans dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.p-given { font-weight: 700; color: var(--ng); }
+.p-none { color: var(--muted); }
+.p-verdict.ng { color: var(--ng); } .p-verdict.hard { color: #b7791f; }
+.p-img { display: block; max-width: 100%; max-height: 180px; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
+.p-rep { color: var(--ng); }
+.p-now { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; font-size: 12px; white-space: nowrap; }
+.p-now.ok { color: var(--ok); border-color: var(--ok); } .p-now.ng { color: var(--ng); border-color: var(--ng); }
+.p-item details { margin-top: 8px; } .p-item summary { cursor: pointer; color: var(--accent); }
+button.p-cat { width: 100%; background: none; border: 0; border-radius: 8px; text-align: left; font-size: 15px; padding: 6px 4px; }
+button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 700; }
+.ask-text { white-space: pre-line; }
