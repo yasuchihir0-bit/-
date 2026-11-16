@@ -1690,6 +1690,10 @@
     try { await navigator.clipboard.writeText(text); if (msgEl) msgEl.textContent = 'コピーしました。'; }
     catch (e) { if (area) { area.focus(); area.select(); } if (msgEl) msgEl.textContent = 'コピーできませんでした。選ばれた文字を、長押し（右クリック）でコピーしてください。'; }
   }
+  /* スマホで受け口を作るときの説明（スマホでは開いた状態で出す） */
+  const isPhone = () => { try { return window.matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600; } catch (e) { return false; } };
+  const phoneTip = (html) => `<details class="wz-phone"${isPhone() ? ' open' : ''}><summary>📱 スマホのとき</summary><div class="small">${html}</div></details>`;
+  const DESKTOP_HOW = '<b>iPhone（Safari）</b>：アドレス欄の左の「ぁあ」（または「⋯」）→「デスクトップ用 Web サイトを表示」<br><b>Android（Chrome）</b>：右上の「︙」→「PC 版サイト」にチェック';
   function sheetWizard(step = 1, mode = 'new') {
     reset();
     let d;
@@ -1717,10 +1721,11 @@
         <p>お子さんの記録を受け取る「受け口」を、<b>保護者の Google アカウント</b>の中に作ります。アプリの提供者は、記録を受け取りません。</p>
         <ul class="steps">
           <li>いるもの：保護者の Google アカウント</li>
-          <li><b>パソコンかタブレット</b>がおすすめです（スマホでもできますが、Google の画面が小さく、操作しにくいです）。</li>
+          <li><b>パソコンかタブレット</b>がいちばん楽です。スマホでも、ブラウザを「パソコン用の表示」に切りかえれば作れます（各段階の「📱 スマホのとき」を見てください）。</li>
           <li>合言葉は、この画面が自動で作ります。考える必要はありません。</li>
           <li>とちゅうでやめても、この端末で続きから再開できます。</li>
         </ul>
+        ${phoneTip(`スマホの「Google スプレッドシート」アプリでは、プログラムを貼る画面（Apps Script）が開けません。この案内では、アプリではなく<b>ブラウザ（Safari や Chrome）</b>で Google の画面を開き、「パソコン用の表示」に切りかえて進めます。<br>・この画面（tokai3）は、そのまま開いておいてください。Google の画面は、別のタブで開きます。<br>・Google の画面は小さいので、横向きにしたり、指で広げたりしながら操作します。<br>・画面の名前は、端末やブラウザによって少しちがうことがあります。`)}
         ${location.protocol !== 'https:' ? '<p class="small p-warn">いまは、アプリを置き場所ではない場所（ファイルを直接など）で開いています。最後にできる「設定リンク」は、置き場所（https:// で始まるアドレス）で開いたアプリで作ってください。</p>' : ''}
         ${nav(0, 2, 'はじめる')}</div>`;
     } else if (step === 2) {
@@ -1730,6 +1735,7 @@
           <li>左上の「無題のスプレッドシート」を押して、名前を <b>東海中 まちがい記録</b> などにします。</li>
           <li>メニューの <b>拡張機能 → Apps Script</b> を押します。プログラムを書く画面が、また別のタブで開きます。</li>
         </ol>
+        ${phoneTip(`1. 上のボタンを<b>長押し</b>して「新規タブで開く」を選びます（ふつうに押すとスプレッドシートのアプリが開くことがあります。アプリが開いたら、閉じて長押しからやりなおします）。<br>2. 開いたタブで、パソコン用の表示に切りかえます。<br>${DESKTOP_HOW}<br>3. 画面の上に「拡張機能」のメニューが出たら、そこから「Apps Script」を開きます（Apps Script も新しいタブで開きます。そのタブでも、表示が小さすぎるときは同じようにパソコン用の表示にします）。<br>4. ログインを求められたら、保護者の Google アカウントでログインします。`)}
         <p class="small">開けたら、この画面にもどって「次へ」を押します。</p>
         ${nav(1, 3)}</div>`;
     } else if (step === 3) {
@@ -1741,6 +1747,7 @@
         </ol>
         <textarea id="wzcode" class="datatext" rows="8" readonly aria-label="受け口のプログラム">読みこんでいます…</textarea>
         <p style="margin:8px 0 0"><button class="btn" id="wzcopy" type="button" disabled>コピー</button> <span class="small" id="wzmsg"></span></p>
+        ${phoneTip(`1. この画面で「コピー」を押します。<br>2. Apps Script のタブに切りかえ、プログラムの文字の上を<b>長押し</b>して「すべてを選択」を選びます（出ないときは、文字を 2 回たたいてから、選ぶ範囲を最後まで広げます）。<br>3. 選んだ文字の上で、もう一度長押しして「ペースト」（貼り付け）を選びます。<br>4. 上の 💾（保存）を押します。`)}
         <p class="small p-warn">このプログラムには合言葉が入っています。ほかの人に見せたり、送ったりしないでください。</p>
         ${nav(mode === 'update' ? 0 : 2, 4)}</div>`;
     } else if (step === 4) {
@@ -1751,6 +1758,7 @@
           <li><b>バージョン</b>を <b>「新バージョン」</b> にして、<b>デプロイ</b> を押します。</li>
         </ol>
         <p class="small">アドレス（…/exec）は変わりません。お子さんの端末の設定も、そのままで使えます。</p>
+        ${phoneTip('「デプロイ」のボタンは画面の右上にあります。見つからないときは、横向きにするか、指で縮めて画面全体を見ます。')}
         ${nav(3, 5)}</div>` : `${head('ウェブアプリとして公開する')}<div class="card wz">
         <ol class="steps">
           <li>Apps Script の画面の右上の <b>デプロイ → 新しいデプロイ</b> を押します。</li>
@@ -1760,6 +1768,7 @@
           <li>「アクセスを承認」を押し、自分のアカウントを選びます。<br>「Google ではこのアプリを確認していません」と出たら、<b>詳細 → （プロジェクト名）に移動</b> → <b>許可</b> で進みます。<br><span class="small">自分で貼りつけたプログラムなので、このとおりで大丈夫です。このプログラムが触れるのは、このスプレッドシートだけです。</span></li>
           <li>最後に出る <b>ウェブアプリの URL</b>（…/exec で終わるもの）の「コピー」を押します。</li>
         </ol>
+        ${phoneTip(`・「デプロイ」のボタンは画面の右上にあります。見つからないときは、横向きにするか、指で縮めて画面全体を見ます。<br>・「アクセスを承認」を押すと、ログインの画面が新しいタブ（ウインドウ）で開きます。開かないときは、ブラウザの設定で「ポップアップブロック」をいったん切ってから、もう一度押します（iPhone：設定アプリ →「Safari」→「ポップアップブロック」）。終わったら元にもどしてかまいません。<br>・最後の URL は「コピー」を押してから、この画面（tokai3）のタブにもどって、次の画面で貼りつけます。`)}
         ${nav(3, 5)}</div>`;
     } else {
       body = `${head('アドレスを貼りつけて確かめる')}<div class="card wz">

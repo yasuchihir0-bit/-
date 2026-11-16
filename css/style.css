@@ -423,3 +423,7 @@ button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent)
 .fam-b.got { opacity: 1; border-color: var(--accent); }
 .fam-b-ic { font-size: 26px; line-height: 1.2; }
 .fam-b-nm { font-weight: 700; font-size: 14px; }
+.wz-phone { margin: 10px 0 4px; padding: 8px 12px; border: 1px dashed var(--line); border-radius: 10px; }
+.wz-phone summary { cursor: pointer; font-weight: 700; color: var(--accent); }
+.wz-phone > div { margin-top: 6px; line-height: 1.8; }
+.wz a.btn { display: inline-flex; align-items: center; margin: 6px 0 2px; text-decoration: none; }
