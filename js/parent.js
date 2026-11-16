@@ -49,7 +49,24 @@
           <li>受け口はあり、もう 1 台の保護者の端末にしたいとき：保護者の端末で作った「保護者の端末用リンク」を、この端末で開きます。</li>
         </ol>
         <p><a class="btn" href="shakai.html#parents">保護者の方へ（受け口をつくる）</a></p>
+      </div>
+      <div class="card">
+        <label class="small" for="plink">保護者の端末用リンクを、ここに貼りつけても設定できます（ホーム画面のアイコンから開いているときや、リンクを開いても設定されないとき）</label>
+        <input id="plink" class="p-field" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…/index.html#setup=…">
+        <button class="btn" id="plinkgo" type="button">設定する</button>
+        <p class="small p-err" id="p-msg" role="alert"></p>
       </div>`);
+    $('#plinkgo').addEventListener('click', async () => {
+      const raw = $('#plink').value.trim();
+      let hash = '';
+      try { hash = new URL(raw).hash; } catch (e) { hash = raw.startsWith('#') ? raw : ''; }
+      const link = S.readLink(hash);
+      if (!link || link.err) return alertBox((link && link.err) || '設定リンクを、そのまま全部貼りつけてください。');
+      if (link.role !== 'parent') return alertBox('これはお子さんの端末用のリンクです。保護者の端末用のリンクを貼りつけてください。');
+      alertBox('受け口に確かめています…');
+      const r = await S.applyLink(link);
+      if (r.ok) main('look'); else alertBox(r.message || '設定できませんでした。');
+    });
   }
 
   /* ───────── タブ ───────── */

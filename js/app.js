@@ -1667,6 +1667,11 @@
         <button class="btn sub" data-links="parent" type="button">👪 保護者の端末を追加</button>
         <button class="btn ghost" data-wiz="update" type="button">🔧 受け口を新しくする</button>
       </div>` : ''}
+      <div class="p-pastelink">
+        <label class="small" for="shlink">${st.configured ? '設定リンクで設定しなおす' : 'お子さんの端末・もう 1 台の保護者の端末は、保護者の端末で作った<b>設定リンク</b>を開くか、ここに貼りつけます'}（ホーム画面のアイコンから開いているときや、リンクを開いても設定されないとき）</label>
+        <div class="answer-row"><input id="shlink" class="p-field" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…/index.html#setup=…"><button class="btn sub" id="shlinkgo" type="button">設定する</button></div>
+      </div>
+      ${st.configured ? '<p style="margin:6px 0"><button class="btn ghost" id="shdiag" type="button">🔍 つながりを確かめる</button></p><pre class="p-diag" id="shdiagout" hidden></pre>' : ''}
       <details class="p-manual">
         <summary class="small">アドレスと合言葉を直接入れる${st.configured ? '・呼び名をかえる・送信をやめる' : ''}</summary>
         <label class="small" for="shlabel">この端末を使うお子さんの呼び名（保護者画面に出ます。例：たろう）</label>
@@ -1917,6 +1922,7 @@
     h(`
       <h1>👪 保護者画面</h1>
       <p class="lead">${esc(K.name)}で、お子さんがまちがえた問題と、そのとき答えた内容です。新しいものから順に出ます。</p>
+      ${SHEET && !(SYNC && SYNC.available()) ? `<a class="card p-fam-link" href="parent.html"><b>🎁 ご褒美・申請・応援・ポイント</b><span class="small">「👪 保護者の画面」で、ごほうびの登録、申請の承認、応援メッセージ、3 教科まとめた学習のようすを見られます ›</span></a>` : ''}
       ${syncOn ? `<div class="card p-sync">
         ${remote ? `<div class="seg" role="group" aria-label="どの端末の記録を見るか">
           <button type="button" data-src="local" aria-pressed="${!isRemote}">この端末の記録</button>
@@ -1988,6 +1994,40 @@
         pSheetMsg = `${t.message}${f && f.sent ? `この端末の記録 ${f.sent} 件を送りました。` : ''}`;
       } else pSheetMsg = t.message;
       if ($app.querySelector('#shsave')) parents(range, cid, shown);
+    });
+    on('#shlinkgo', 'click', async () => {
+      const msg = $app.querySelector('#shmsg');
+      const raw = $app.querySelector('#shlink').value.trim();
+      let hash = '';
+      try { hash = new URL(raw).hash; } catch (e) { hash = raw.startsWith('#') ? raw : ''; }
+      const link = SHEET.readLink(hash);
+      if (!link || link.err) { msg.textContent = (link && link.err) || '設定リンクを、そのまま全部貼りつけてください（…#setup= で始まる部分をふくむもの）。'; return; }
+      msg.textContent = '受け口に確かめています…';
+      const r = await SHEET.applyLink(link);
+      pSheetMsg = r.ok ? `設定できました（${link.role === 'child' ? `この端末は${link.label ? `「${link.label}」の` : 'お子さんの'}端末として、記録を送ります` : 'この端末は保護者の端末として、記録を見られます'}）。${r.message || ''}` : (r.message || '設定できませんでした。');
+      pSynced = false;
+      if ($app.querySelector('#shlinkgo')) parents(range, cid, shown);
+    });
+    on('#shdiag', 'click', async () => {
+      const out = $app.querySelector('#shdiagout'), btn = $app.querySelector('#shdiag');
+      btn.disabled = true; out.hidden = false; out.textContent = '確かめています…';
+      const d = await SHEET.diagnose(sheetOpt()).catch((e) => ({ error: String(e) }));
+      const role = { child: 'お子さんの端末（送る）', parent: '保護者の端末（見る）', both: '送る・見る両方' }[d.role] || 'なし';
+      out.textContent = [
+        `この端末の設定：${d.configured ? `あり（${role}${d.label ? `・呼び名 ${d.label}` : ''}）` : 'なし'}`,
+        d.host ? `受け口：${d.host}` : '',
+        d.test ? `受け口の確認：${d.test === 'ok' ? 'OK' : d.test}${d.test === 'ok' ? '' : `（${d.testMsg || ''}）`}` : '',
+        d.flush ? `記録を送る：${d.flush}` : '',
+        d.famNow ? `ポイント：${d.famNow}` : '',
+        d.pull ? `ほかの端末の記録を読む：${d.pull}` : '',
+        d.kids !== undefined ? `受け口に記録がある端末：${d.kids}` : '',
+        `まだ送っていない：まちがい ${d.pendingAfter !== undefined ? d.pendingAfter : d.pending} 件・解いた記録 ${d.eventsAfter !== undefined ? d.eventsAfter : d.events} 件`,
+        `最後に送った日時：${d.lastOk ? atText(d.lastOk) : 'まだ'}`,
+        (d.lastErrAfter || d.lastErr) ? `最後のエラー：${d.lastErrAfter || d.lastErr}` : '',
+        d.error ? `エラー：${d.error}` : '',
+        `アプリ：${location.host}（${navigator.standalone ? 'ホーム画面から' : 'ブラウザ'}）`,
+      ].filter(Boolean).join('\n');
+      btn.disabled = false;
     });
     onAll('[data-wiz]', 'click', (e) => { const m = e.currentTarget.dataset.wiz; const dr = SHEET.getDraft(); sheetWizard(m === 'update' ? 3 : (dr && dr.step) || 1, m); });
     onAll('[data-links]', 'click', (e) => sheetLinks(e.currentTarget.dataset.links));

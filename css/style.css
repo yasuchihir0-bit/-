@@ -427,3 +427,8 @@ button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent)
 .wz-phone summary { cursor: pointer; font-weight: 700; color: var(--accent); }
 .wz-phone > div { margin-top: 6px; line-height: 1.8; }
 .wz a.btn { display: inline-flex; align-items: center; margin: 6px 0 2px; text-decoration: none; }
+.p-pastelink { margin: 6px 0; }
+.p-pastelink .answer-row input { font-size: 14px; margin: 0; }
+.p-diag { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 6px 0 0; }
+a.p-fam-link { display: grid; gap: 4px; text-decoration: none; color: var(--text); border-left: 4px solid var(--accent); }
+a.p-fam-link b { color: var(--accent); }

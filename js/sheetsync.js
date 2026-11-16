@@ -317,6 +317,26 @@
     return r.j || { ok: false, err: 'fail' };
   }
 
-  g.SheetSync = { track, famState, famOn, famCall, parentOn, parentCall, device, setConfig, clearConfig, getLabel, setLabel, test, flush, flushSoon, pull, sync, status, MIN_SECRET, MIN_VER,
+  /* つながりを確かめる：この端末の設定・受け口の版・送れていない記録・最後のエラーをまとめる */
+  async function diagnose(opt) {
+    const c = config(), st = state(), ev = evLoad();
+    const out = { configured: !!c, role: c ? (c.can.write && c.can.read ? 'both' : c.can.write ? 'child' : 'parent') : '', label: getLabel(),
+      pending: 0, events: ev.q.length, lastOk: st.lastOk, lastPull: st.lastPull || '', lastErr: st.lastErr, unconfirmed: !!st.unconfirmed, fam: !!famState() };
+    if (!c) return out;
+    out.host = new URL(c.url).host;
+    out.pending = status(opt).pending;
+    const t = await test(c.url, c.secret);
+    out.test = t.ok ? (t.unknown ? 'unknown' : 'ok') : t.err;
+    out.testMsg = t.message;
+    if (t.ok && !t.unknown) {
+      if (c.can.write) { const f = await flush(opt); out.flush = f.err ? f.err : `ok（${f.sent || 0} 件）`; out.awards = (f.awards || []).length; const fs = await famCall('state'); out.famNow = fs && fs.ok ? `${(fs.state || {}).balance} pt` : (fs && fs.err) || 'fail'; }
+      if (c.can.read) { const p = await pull(opt); out.pull = p.err ? p.err : `ok（${p.count || 0} 件・${p.devs || 0} 台）`; const ps = await parentCall('kids'); out.kids = ps && ps.ok ? ps.kids.length : (ps && ps.err) || 'fail'; }
+    }
+    const st2 = state();
+    out.pendingAfter = status(opt).pending; out.eventsAfter = evLoad().q.length; out.lastErrAfter = st2.lastErr;
+    return out;
+  }
+
+  g.SheetSync = { diagnose, track, famState, famOn, famCall, parentOn, parentCall, device, setConfig, clearConfig, getLabel, setLabel, test, flush, flushSoon, pull, sync, status, MIN_SECRET, MIN_VER,
     makeSecret, buildCode, getDraft, setDraft, getPair, setPair, checkPair, makeLink, readLink, applyLink, URL_RE };
 })(typeof window !== 'undefined' ? window : globalThis);
