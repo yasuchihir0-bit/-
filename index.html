@@ -68,8 +68,12 @@
   .sync .actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .sync button.quiet { color: var(--muted); border-color: var(--line); }
   .setup { border-color: var(--accent); border-width: 2px; }
-  .parent-link { margin: 0; text-align: center; font-size: 15px; }
-  .parent-link a { color: var(--accent); font-weight: 700; }
+  a.parent-link { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; background: var(--card); color: var(--text); text-decoration: none; border: 2px solid var(--accent); border-radius: 16px; padding: 12px 16px; }
+  a.parent-link b { display: block; color: var(--accent); font-size: 17px; }
+  a.parent-link .pl-sub { display: block; font-size: 13px; color: var(--muted); }
+  a.parent-link .pl-ic { font-size: 26px; }
+  a.parent-link .go { color: var(--accent); font-size: 22px; }
+  a.parent-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
   .move { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 18px; font-size: 14px; }
   .move > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
   .move .body { display: grid; gap: 10px; margin-top: 8px; }
@@ -104,6 +108,8 @@
     </div>
   </section>
 
+  <a class="parent-link" id="parentLink" href="parent.html"><span class="pl-ic" aria-hidden="true">👪</span><span><b>保護者の画面</b><span class="pl-sub">ご褒美の登録・申請の承認・応援・学習のようす</span></span><span class="go" aria-hidden="true">›</span></a>
+
   <nav class="subjects" aria-label="教科">
     <a class="subject" href="kokugo.html" style="--c: var(--koku)">
       <span class="seal" aria-hidden="true">国</span>
@@ -134,8 +140,6 @@
     <p class="how">お子さんの端末と保護者の端末で、<b>同じ claude.ai アカウントにログインして</b>このページを開くと、お子さんがまちがえた問題と答えた内容を、保護者の端末でも見られます。見るときは、教科を開いて、いちばん下の「👪 保護者の方へ」を押します。</p>
     <button type="button" id="syncBtn">🔄 いますぐ同期する</button>
   </section>
-
-  <p class="parent-link" id="parentLink"><a href="parent.html">👪 保護者の画面（ようす・申請・応援・ご褒美）</a></p>
 
   <details class="move" id="move">
     <summary>📦 記録をまとめて移す（国語・社会・理科）</summary>

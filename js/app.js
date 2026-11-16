@@ -177,6 +177,8 @@
     store.seq = seq;
   }
   const SYNC = (typeof window !== 'undefined' && window.TokaiSync) || null;
+  // claude.ai の公開ページには保護者の画面（parent.html）がないので、右上の「👪 保護者」を出さない
+  { const pb = document.getElementById('parentBtn'); if (pb && SYNC && SYNC.available()) pb.hidden = true; }
   const SYNC_S = APP.key.replace(/^tokai-/, '').replace(/-v\d+$/, ''); // kokugo / shakai / rika
   /* この端末の記録を claude.ai 側に保存する（公開ページで開いたときだけ。失敗しても何もしない） */
   const pushSync = () => { if (SYNC && SYNC.available()) { try { SYNC.upload(SYNC_S).catch(() => {}); } catch (e) { /* noop */ } } };

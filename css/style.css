@@ -432,3 +432,5 @@ button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent)
 .p-diag { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 6px 0 0; }
 a.p-fam-link { display: grid; gap: 4px; text-decoration: none; color: var(--text); border-left: 4px solid var(--accent); }
 a.p-fam-link b { color: var(--accent); }
+a.icon-btn { text-decoration: none; color: inherit; }
+@media (max-width: 400px) { #parentBtn span { display: inline; } }
