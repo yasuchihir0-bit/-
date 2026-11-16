@@ -3,7 +3,7 @@ const path = require('path');
 const load = (f) => require(path.join(__dirname, '..', 'js', f));
 load('util.js');
 load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/kokugo-jakuten.js'); load('data/kokugo5.js'); load('data/kokugo6.js'); load('data/filter.js');
-load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js"); load("data/shakai8.js"); load("data/shakai9.js"); load("data/shakai-jakuten.js");
+load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js"); load("data/shakai8.js"); load("data/shakai-jakuten.js");
 ["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2", "rika-moshi", "rika-jakuten"].forEach((f) => load(`data/${f}.js`));
 const { KOKUGO, SHAKAI, RIKA } = globalThis;
 let fail = 0;
@@ -104,22 +104,6 @@ function checkSubject(S) {
 
 checkSubject(KOKUGO);
 checkSubject(SHAKAI);
-// 漢字で書く：分野・漢字・重複のチェック
-{
-  const KJ = /[\u4e00-\u9fff々]/;
-  const seenK = new Set();
-  (SHAKAI.kanjiExtra || []).forEach((e) => {
-    const [cat, q, ans] = e;
-    if (!SHAKAI.cats.some((c) => c.id === cat)) bad('kanji: unknown cat', e);
-    if (!KJ.test(ans)) bad('kanji: answer has no kanji', e);
-    if (!q || q.length < 6) bad('kanji: hint too short', e);
-    if (seenK.has(ans)) bad('kanji: duplicate word', e);
-    seenK.add(ans);
-  });
-  const fromBank = SHAKAI.bank.filter((b) => b.a && KJ.test(b.a[0])).map((b) => b.a[0]);
-  const all = new Set([...fromBank, ...seenK]);
-  console.log(`【社会・漢字で書く】${all.size} 語（記述問題から ${new Set(fromBank).size}・追加 ${seenK.size}）`);
-}
 checkSubject(RIKA);
 console.log(fail ? `${fail} failures` : 'all ok');
 process.exit(fail ? 1 : 0);

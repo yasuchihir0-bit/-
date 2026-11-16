@@ -1625,7 +1625,7 @@
         <strong>この画面について</strong>
         <ul class="steps small" style="padding-left:1.2em;margin-top:6px">
           <li>クイズは、えらんだ選択肢や入力した答えをそのまま表示します。</li>
-          <li>手書き（書き取り・漢字で書く）は、書いた字の画像を新しい ${IMG_KEEP} 件まで残します。記述・手書き・暗記カードは、お子さん自身がつけた ○・△・× です。</li>
+          <li>${KANJI.length ? `手書き（書き取り・漢字で書く）は、書いた字の画像を新しい ${IMG_KEEP} 件まで残します。` : ''}記述・暗記カードは、お子さん自身がつけた ○・△・× です。</li>
           <li>記録は新しい ${LOG_MAX} 件まで、この端末のブラウザに保存されます。公開ページを claude.ai にログインして開いているときは、新しい 600 件（手書きの画像は 40 件）が、同じアカウントの別の端末からも見られます。${APP.links.length ? 'ほかの教科は、それぞれの教科の保護者画面で見られます。' : ''}</li>
         </ul>
         ${APP.links.length ? `<p class="small" style="margin:6px 0 0">ほかの教科：${APP.links.map((l) => `<a class="linkbtn" href="${esc(l.href)}">${esc(l.label)}</a>`).join('・')}</p>` : ''}
