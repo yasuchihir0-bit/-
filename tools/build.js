@@ -25,7 +25,7 @@ if (!process.argv[3] && mode !== 'site') { console.error(`${mode} には出力�
 if (mode === 'worker') { buildWorker(out); process.exit(0); }
 if (out === ROOT || ROOT.startsWith(out + path.sep)) { console.error('出力先が、リポジトリそのものか、その上のフォルダになっています'); process.exit(1); }
 
-const PAGES = ['index.html', 'kokugo.html', 'shakai.html', 'rika.html'];
+const PAGES = ['index.html', 'kokugo.html', 'shakai.html', 'rika.html'].concat(mode === 'artifact' ? [] : ['parent.html']); // 保護者の画面は、受け口とやりとりできる置き場所だけ
 const DIRS = ['css', 'js'];
 const ROOT_FILES = fs.readdirSync(ROOT).filter((f) => /\.(svg|webmanifest)$/.test(f));
 

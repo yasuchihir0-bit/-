@@ -401,3 +401,25 @@ button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent)
 .wz code { font-size: 13px; overflow-wrap: anywhere; }
 .qrbox { margin: 12px 0 4px; }
 .qrbox img { display: block; background: #fff; padding: 8px; border-radius: 8px; image-rendering: pixelated; max-width: 100%; height: auto; }
+
+/* ごほうび（お子さんの画面）：ポイント・バッジ・応援 */
+.fam-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.fam-bar .fam-pt { font-size: 18px; }
+.fam-bar .fam-pt b { font-size: 24px; }
+.fam-bar .fam-badge { color: var(--muted); }
+.fam-bar .btn { margin-left: auto; }
+.fam-msg { border-left: 4px solid var(--accent); }
+.fam-msg-row + .fam-msg-row { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.fam-warn { border-left: 4px solid var(--ng, #d1242f); }
+.fam-gain { text-align: center; border: 2px solid var(--ok, #1a7f37); }
+.fam-gain-pt b { font-size: 26px; }
+.fam-gain-badge { margin-top: 6px; font-weight: 700; }
+.fam-list { list-style: none; padding: 0; margin: 8px 0 0; }
+.fam-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.fam-list li > span:first-child { flex: 1 1 10em; min-width: 0; overflow-wrap: anywhere; }
+.fam-cost { font-weight: 700; }
+.fam-badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
+.fam-b { display: grid; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; opacity: .55; text-align: center; }
+.fam-b.got { opacity: 1; border-color: var(--accent); }
+.fam-b-ic { font-size: 26px; line-height: 1.2; }
+.fam-b-nm { font-weight: 700; font-size: 14px; }

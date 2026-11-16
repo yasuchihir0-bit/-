@@ -268,6 +268,8 @@
     schedule(q, grade || (ok ? 'ok' : 'ng'));
     logDay(ok, sec, 'quiz');
     save();
+    // ごほうびのしくみ：解いた記録をためる（受け口がポイントを計算する。設定していなければ何もしない）
+    if (SHEET) { const c = catOf(q.subject, q.cat); SHEET.track({ subject: SYNC_S, cat: q.cat, catName: c ? c.name : '', ok, lv: lvOf(q), sec }); }
   }
 
   /* ───────── 問題をつくる ───────── */
@@ -517,6 +519,8 @@
           : 'まよったらこのボタン。まちがえた問題や、忘れかけた問題を先に出します。'}</p>
       </div>
 
+      <div id="family-home">${famHomeHtml()}</div>
+
       <div class="grid two">
         <button class="tile" style="--tc:var(--accent)" data-pick="1">
           <span class="ic">📚</span><span class="tt">分野をえらぶ</span>
@@ -556,6 +560,7 @@
     on('[data-stats]', 'click', analysis);
     on('[data-help]', 'click', help);
     on('[data-parents]', 'click', () => parents());
+    wireFamHome(true);
     if (!store.seenGuide) guide();
   }
 
@@ -1131,7 +1136,11 @@
     clearInterval(timerId);
     session.done = true;
     pushSync();
-    pushSheet();
+    // 今日の復習がぜんぶ終わっていたら「復習ゼロ」のしるしを送る（バッジ）
+    if (SHEET && SHEET.famOn() && dueList().length === 0 && todayCount() > 0) SHEET.track({ k: 'review' });
+    if (SHEET && SHEET.famOn()) {
+      SHEET.flush(sheetOpt()).then((r) => { const el = $app.querySelector('#gain'); if (el && r && r.awards) el.innerHTML = gainHtml(r.awards); }, () => {});
+    } else pushSheet();
     setKeys(null);
     const rs = session.results;
     const ok = rs.filter((r) => r.ok).length;
@@ -1151,6 +1160,7 @@
         <p class="small" style="margin:4px 0 0">かかった時間 ${elapsed()}${wrongs.length ? '・まちがえた問題は、あとでもう一度出てきます' : ''}</p>
         ${Object.keys(byCat).length > 1 ? `<div style="margin-top:10px">${catRows}</div>` : ''}
       </div>
+      <div id="gain"></div>
       ${session.daily ? `<div class="card hero">
         <div class="small">今日の目標</div>
         <div class="goal"><b>${todayCount()}</b> / ${goal()} 問</div>
@@ -1543,6 +1553,88 @@
     on('#again', 'click', () => kanjiStart(shuffle(weak), session.title));
     on('#more', 'click', () => kanjiHome());
     on('#home2', 'click', home);
+  }
+
+  /* ───────── ごほうび（お子さんの画面）：ポイント・バッジ・交換の申請・保護者からの応援 ─────────
+   * 数字はすべて受け口（保護者の Google）が計算したもの。この端末は届いたものを見せるだけ */
+  const famNum = (v) => (Number.isFinite(+v) ? Math.floor(+v) : 0);
+  const famList = (v) => (Array.isArray(v) ? v : []);
+  const FAM_SEEN = 'tokai-sheet-seen'; // その日のうちは、読んだ応援もホームに出しておく
+  const famSeen = () => { try { const v = JSON.parse(localStorage.getItem(FAM_SEEN)); return Array.isArray(v) ? v.filter((m) => m && m.day === today()) : []; } catch (e) { return []; } };
+  function famHomeHtml() {
+    if (!SHEET || !SHEET.famOn()) return '';
+    const st = SHEET.famState();
+    if (!st) return '<p class="small center">💰 ポイントを読みこみ中…</p>';
+    const msgs = famSeen().concat(famList(st.messages));
+    const got = famList(st.badges).filter((b) => famNum(b.count) > 0).length;
+    return `${msgs.length ? `<div class="card fam-msg" role="status">${msgs.map((m) => `<div class="fam-msg-row"><span class="small">📩 保護者から</span><div>${m.stamp ? `<b>${esc(m.stamp)}</b> ` : ''}${esc(m.text || '')}</div></div>`).join('')}</div>` : ''}
+      <div class="card fam-bar">
+        <span class="fam-pt">💰 <b>${famNum(st.balance)}</b> pt</span>
+        <span class="fam-badge">🏅 バッジ ${got} / ${famList(st.badges).length}</span>
+        <button class="btn sub" type="button" data-fam-rewards="1">🎁 ごほうび</button>
+      </div>`;
+  }
+  let famFetched = 0;
+  function wireFamHome(refresh) {
+    const el = $app.querySelector('#family-home');
+    if (!el || !SHEET || !SHEET.famOn()) return;
+    el.querySelectorAll('[data-fam-rewards]').forEach((b) => b.addEventListener('click', () => famRewards()));
+    const st = SHEET.famState();
+    const unread = st ? famList(st.messages) : [];
+    if (unread.length) {
+      // 見せた応援は「読んだ」にする（その日のうちはホームに出しておく）
+      try { localStorage.setItem(FAM_SEEN, JSON.stringify(famSeen().concat(unread.map((m) => ({ id: m.id, stamp: m.stamp, text: m.text, day: today() }))).slice(-20))); } catch (e) { /* noop */ }
+      SHEET.famCall('read_msgs', { ids: unread.map((m) => m.id) }).catch(() => {});
+    }
+    // ホームを開いたら、ときどき受け口から最新の状態を取りなおす（1 分に 1 回まで）
+    if (refresh && Date.now() - famFetched > 60000) {
+      famFetched = Date.now();
+      SHEET.famCall('state').then((r) => {
+        const cur = $app.querySelector('#family-home');
+        if (r && r.ok && cur && !unread.length) { cur.innerHTML = famHomeHtml(); wireFamHome(false); }
+      }, () => {});
+    }
+  }
+  function gainHtml(awards) {
+    const a = famList(awards);
+    const total = a.reduce((s, x) => s + famNum(x.pts), 0);
+    if (!total) return '';
+    const badges = a.filter((x) => x.reason === 'badge');
+    return `<div class="card fam-gain" role="status"><div class="fam-gain-pt">💰 <b>+${total}</b> pt ゲット！</div>
+      ${badges.map((b) => `<div class="fam-gain-badge">🏅 バッジ獲得！ ${esc(b.label)} <b>+${famNum(b.pts)}pt</b></div>`).join('')}</div>`;
+  }
+  const FAM_STATUS = { pending: '⏳ 保護者の確認待ち', approved: '✅ OK！', rejected: '🙅 今回はなし' };
+  function famRewards(msg = '') {
+    reset();
+    const st = SHEET.famState() || { balance: 0, badges: [], rewards: [], requests: [] };
+    const bal = famNum(st.balance);
+    h(`
+      <h1>🎁 ごほうび</h1>
+      <div class="card hero"><div class="small">いまのポイント</div><div class="goal"><b>${bal}</b> pt</div>
+        <p class="small" style="margin:4px 0 0">問題を解くと 2pt、正解でさらに 1pt。1 日 20 問で +25pt。バッジでもたまります。</p></div>
+      <div class="card"><strong>交換できるごほうび</strong>
+        ${famList(st.rewards).length ? `<ul class="fam-list">${famList(st.rewards).map((r) => `<li><span>${esc(r.emoji || '🎁')} ${esc(r.name)}</span><span class="fam-cost">${famNum(r.cost)} pt</span>
+          <button class="btn" type="button" data-fam-req="${famNum(r.id)}" ${famNum(r.cost) > bal ? 'disabled' : ''}>交換したい</button></li>`).join('')}</ul>`
+          : '<p class="small">まだごほうびがありません。保護者の人に決めてもらおう。</p>'}
+        <p class="small" id="fam-req-msg" role="status">${esc(msg)}</p></div>
+      ${famList(st.requests).length ? `<div class="card"><strong>申請したもの</strong><ul class="fam-list">${famList(st.requests).map((r) => `<li><span>${esc(r.name)}（${famNum(r.cost)} pt）</span>
+        <span>${FAM_STATUS[r.status] || ''}${r.note ? `<br><span class="small">${esc(r.note)}</span>` : ''}</span></li>`).join('')}</ul></div>` : ''}
+      <div class="card"><strong>バッジ</strong>
+        <div class="fam-badges">${famList(st.badges).map((b) => `<div class="fam-b ${famNum(b.count) ? 'got' : ''}" title="${esc(b.desc)}">
+          <span class="fam-b-ic">${esc(b.emoji)}</span><span class="fam-b-nm">${esc(b.name)}${famNum(b.count) > 1 ? ` ×${famNum(b.count)}` : ''}</span>
+          <span class="small">${famNum(b.count) ? `+${famNum(b.pts)}pt` : esc(b.desc)}</span></div>`).join('')}</div></div>
+      <div class="row"><button class="btn sub" type="button" id="famBack">ホームへ</button></div>`);
+    on('#famBack', 'click', home);
+    onAll('[data-fam-req]', 'click', async (e) => {
+      const b = e.currentTarget, out = $app.querySelector('#fam-req-msg');
+      b.disabled = true;
+      const r = await SHEET.famCall('request', { rewardId: +b.dataset.famReq }).catch(() => ({ err: 'net' }));
+      if (r && r.ok) { famRewards('申請しました！ 保護者の人が確認するまで待ってね。'); return; }
+      out.textContent = r && r.err === 'points' ? 'ポイントが足りません。' : r && r.err === 'notfound' ? 'このごほうびは、いまは交換できません。' : '電波がつながっているときに、もう一度おしてね。';
+      b.disabled = false;
+    });
+    // 最新の状態を取りなおして、ちがっていたら描きなおす
+    SHEET.famCall('state').then((r) => { if (r && r.ok && $app.querySelector('#famBack') && !msg && famNum(r.state.balance) !== bal) famRewards(); }, () => {});
   }
 
   /* ───────── 保護者画面：まちがえた問題と、答えた内容 ───────── */
@@ -2088,6 +2180,6 @@
     return out;
   }
 
-  home();
+  if (location.hash === '#parents') { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* noop */ } parents(); } else home();
   pushSheet(true); // 前回までに送れなかった分があれば、あらためて送る
 })();

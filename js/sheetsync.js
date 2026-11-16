@@ -10,10 +10,13 @@
   const CFG_KEY = 'tokai-sheet-cfg', ST_KEY = 'tokai-sheet-state', DEV_KEY = 'tokai-device';
   const URL_RE = /^https:\/\/script\.google\.com\/(?:a\/macros\/[A-Za-z0-9.-]+\/|macros\/)s\/[A-Za-z0-9_-]{10,}\/exec$/;
   const MIN_SECRET = 12;
-  const MIN_VER = 1;  // 受け口（Code.gs）の版番号が、これより古いときは、新しくしてもらう
+  const MIN_VER = 2;  // 受け口（Code.gs）の版番号が、これより古いときは、新しくしてもらう（版 2：ごほうびのしくみ）
   const LABEL_KEY = 'tokai-sheet-label';
   const PAIR_KEY = 'tokai-sheet-pair';    // 保護者の端末だけ：受け口のアドレスと 2 つの合言葉（ほかの端末の設定リンクを作るため）
   const DRAFT_KEY = 'tokai-sheet-draft';  // 受け口づくりの案内のとちゅう
+  const EV_KEY = 'tokai-sheet-ev';        // お子さんの端末：まだ送っていない「解いた記録」（ポイントの計算用。3 教科で共通）
+  const FAM_KEY = 'tokai-sheet-fam';      // お子さんの端末：受け口から届いたポイント・ごほうび・応援
+  const MAX_EV = 3000, EV_BATCH = 500;
   const BATCH = 150, MAX_BATCHES = 6, TIMEOUT = 25000, DAYS_SENT = 30;
   const remoteKey = (s) => `tokai-${s}-remote`;
 
@@ -65,7 +68,7 @@
     c.can = { ...(c.can || {}), ...patch };
     ls.set(CFG_KEY, JSON.stringify(c));
   }
-  function clearConfig() { [CFG_KEY, ST_KEY, PAIR_KEY, DRAFT_KEY].forEach((k) => ls.del(k)); } // 合言葉をこの端末に残さない
+  function clearConfig() { [CFG_KEY, ST_KEY, PAIR_KEY, DRAFT_KEY, EV_KEY, FAM_KEY].forEach((k) => ls.del(k)); } // 合言葉をこの端末に残さない
 
   async function post(url, payload, noCors) {
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
@@ -126,13 +129,15 @@
       const days = {};
       const all = (opt.getDays && opt.getDays()) || {};
       Object.keys(all).sort().slice(-DAYS_SENT).forEach((d) => { const v = all[d] || {}; days[d] = { n: v.n || 0, ok: v.ok || 0, cards: v.cards || 0 }; });
-      let sent = 0, result = { ok: true, sent: 0 }, first = true;
+      let sent = 0, result = { ok: true, sent: 0, awards: [] }, first = true;
+      const awards = [];
       for (let i = 0; i < MAX_BATCHES; i++) {
         const after = Number.isInteger(st.acked[key]) ? st.acked[key] : -1;
         const unsent = (opt.getLog() || []).filter((e) => e && Number.isInteger(e.n) && e.n > after).sort((a, b) => a.n - b.n).slice(0, BATCH);
-        if (!unsent.length && (!first || !Object.keys(days).length)) break;
+        const evq = evLoad().q.slice(0, EV_BATCH);
+        if (!unsent.length && !evq.length && (!first || !Object.keys(days).length)) break;
         const rows = unsent.map((e) => ({ n: e.n, d: e.d, t: e.t, cat: e.cat, catName: opt.catName ? opt.catName(e.cat) : e.cat, m: e.m, g: e.g, q: e.q, ans: e.ans, given: e.given === undefined ? null : e.given }));
-        const r = await send(c, { v: MIN_VER, dev, subj: opt.subject, subjName: opt.subjectName, label: getLabel(), rows, days: first ? days : undefined }, true);
+        const r = await send(c, { v: MIN_VER, dev, subj: opt.subject, subjName: opt.subjectName, label: getLabel(), rows, days: first ? days : undefined, events: evq }, true);
         first = false;
         if (r.fail) { st.lastErr = '通信できませんでした。あとでもう一度送ります。'; result = { err: 'net' }; break; }
         if (!r.read) { st.unconfirmed = true; sent += rows.length; result = { ok: true, unconfirmed: true, sent }; break; }
@@ -140,9 +145,11 @@
         if (!r.j || !r.j.ok) { st.lastErr = ERR[r.j && r.j.err] || REFUSED; result = { err: (r.j && r.j.err) || 'fail' }; break; }
         if (verOf(r.j) < MIN_VER) { st.lastErr = OLD; result = { err: 'old' }; break; }
         if (Number.isInteger(r.j.acked) && r.j.acked >= 0) st.acked[key] = r.j.acked; else if (unsent.length) st.acked[key] = unsent[unsent.length - 1].n;
+        if (Number.isInteger(r.j.evAcked)) evAck(r.j.evAcked);
+        if (r.j.fam) { famSave(r.j.fam.state); if (Array.isArray(r.j.fam.awards)) awards.push(...r.j.fam.awards); }
         st.unconfirmed = false; st.lastErr = ''; st.lastOk = new Date().toISOString();
-        sent += rows.length; result = { ok: true, sent };
-        if (unsent.length < BATCH) break;
+        sent += rows.length; result = { ok: true, sent, awards };
+        if (unsent.length < BATCH && evLoad().q.length === 0) break;
       }
       saveState(st);
       return result;
@@ -269,6 +276,47 @@
     return { ok: true, message: t.unknown ? t.message : '' };
   }
 
-  g.SheetSync = { setConfig, clearConfig, getLabel, setLabel, test, flush, flushSoon, pull, sync, status, MIN_SECRET, MIN_VER,
+  /* ───────── ごほうびのしくみ（お子さんの端末） ───────── */
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  function evLoad() {
+    const d = parse(ls.get(EV_KEY));
+    return { seq: d && Number.isInteger(d.seq) ? d.seq : 0, q: d && Array.isArray(d.q) ? d.q.filter((e) => e && Number.isInteger(e.s)) : [] };
+  }
+  /* 解いた記録を 1 つためる（送る合言葉が入っている端末だけ）。3 教科のページで共通の通し番号をつける */
+  function track(e) {
+    const c = config();
+    if (!c || !c.can.write) return;
+    const d = evLoad();
+    const ev = e.k === 'review' ? { s: d.seq, d: today(), k: 'review' }
+      : { s: d.seq, d: today(), subj: String(e.subject || '').slice(0, 20), cat: String(e.cat || '').slice(0, 20), catName: String(e.catName || '').slice(0, 30), ok: !!e.ok, lv: Math.max(1, Math.min(3, e.lv | 0)), sec: Math.max(0, Math.min(600, Math.round(e.sec || 0))) };
+    d.q.push(ev); d.seq += 1;
+    if (d.q.length > MAX_EV) d.q.splice(0, d.q.length - MAX_EV);
+    ls.set(EV_KEY, JSON.stringify(d));
+  }
+  function evAck(n) { const d = evLoad(); d.q = d.q.filter((e) => e.s > n); ls.set(EV_KEY, JSON.stringify(d)); }
+  function famSave(state) { if (state && typeof state === 'object') ls.set(FAM_KEY, JSON.stringify({ state, at: new Date().toISOString() })); }
+  /* 受け口から届いた、ポイント・バッジ・ごほうび・応援（届いたことがなければ null） */
+  function famState() { const f = parse(ls.get(FAM_KEY)); return f && f.state && typeof f.state === 'object' ? f.state : null; }
+  const famOn = () => { const c = config(); return !!(c && c.can.write); };
+  async function famCall(act, extra) {
+    const c = config();
+    if (!c || !c.can.write) return { err: 'off' };
+    const r = await send(c, Object.assign({ v: MIN_VER, act, dev: device(), label: getLabel() }, extra || {}), false);
+    if (r.fail) return { err: 'net' };
+    if (!r.j) return { err: 'fail' };
+    if (r.j.ok && r.j.state) famSave(r.j.state);
+    return r.j;
+  }
+  /* 保護者の端末：保護者の合言葉で、ようす・申請・応援・ごほうびをあつかう */
+  const parentOn = () => { const c = config(); return !!(c && c.can.read); };
+  async function parentCall(act, extra) {
+    const c = config();
+    if (!c || !c.can.read) return { ok: false, err: 'off' };
+    const r = await send(c, Object.assign({ v: MIN_VER, act }, extra || {}), false);
+    if (r.fail) return { ok: false, err: 'net' };
+    return r.j || { ok: false, err: 'fail' };
+  }
+
+  g.SheetSync = { track, famState, famOn, famCall, parentOn, parentCall, device, setConfig, clearConfig, getLabel, setLabel, test, flush, flushSoon, pull, sync, status, MIN_SECRET, MIN_VER,
     makeSecret, buildCode, getDraft, setDraft, getPair, setPair, checkPair, makeLink, readLink, applyLink, URL_RE };
 })(typeof window !== 'undefined' ? window : globalThis);

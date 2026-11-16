@@ -11,13 +11,13 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
 // 1) 合言葉
 {
   const E = makeEnv(SEC);
-  eq('wrong secret', E.post({ secret: 'x', ping: true }), { ok: false, err: 'secret', ver: 1 });
-  eq('ping', E.post({ secret: SEC, ping: true }), { ok: true, ping: true, can: { write: true, read: true }, ver: 1 });
-  eq('bad json', E.post('{oops'), { ok: false, err: 'format', ver: 1 });
+  eq('wrong secret', E.post({ secret: 'x', ping: true }), { ok: false, err: 'secret', ver: 2 });
+  eq('ping', E.post({ secret: SEC, ping: true }), { ok: true, ping: true, can: { write: true, read: true }, ver: 2 });
+  eq('bad json', E.post('{oops'), { ok: false, err: 'format', ver: 2 });
   const D = makeEnv(null); // 合言葉を書きかえていない（初期のまま）
-  eq('placeholder refused', D.post({ secret: 'ここを合言葉に書きかえる', ping: true }), { ok: false, err: 'secret', ver: 1 });
+  eq('placeholder refused', D.post({ secret: 'ここを合言葉に書きかえる', ping: true }), { ok: false, err: 'secret', ver: 2 });
   const S = makeEnv('short');
-  eq('short refused', S.post({ secret: 'short', ping: true }), { ok: false, err: 'secret', ver: 1 });
+  eq('short refused', S.post({ secret: 'short', ping: true }), { ok: false, err: 'secret', ver: 2 });
   eq('doGet reveals nothing', vm.runInContext('doGet', E.ctx)().s.includes('動いています'), true);
 }
 
@@ -45,7 +45,7 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
   // 別の端末は、番号が重なっても別あつかい
   r = E.post({ secret: SEC, dev: 'devchild2', subj: 'shakai', subjName: '社会', rows: [row(0, { q: '別の端末の問題' })] });
   eq('other device same n', { added: r.added, rows: sh.getLastRow() }, { added: 1, rows: 6 });
-  eq('bad dev refused', E.post({ secret: SEC, dev: '../x', subj: 'shakai', rows: [] }), { ok: false, err: 'format', ver: 1 });
+  eq('bad dev refused', E.post({ secret: SEC, dev: '../x', subj: 'shakai', rows: [] }), { ok: false, err: 'format', ver: 2 });
 }
 
 // 3) 読む：教科・端末のしぼりこみ、わからない、学習量の合計
@@ -66,8 +66,8 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
   eq('at is ISO', /^\d{4}-\d{2}-\d{2}T/.test(r.at), true);
   r = E.post({ secret: SEC, read: true, subj: 'shakai', exclude: 'devchild1' });
   eq('exclude own device', [r.rows.length, r.rows[0].q, r.devs], [1, '二台目の問題', 1]);
-  eq('read needs secret', E.post({ secret: 'nope', read: true, subj: 'shakai' }), { ok: false, err: 'secret', ver: 1 });
-  eq('read empty', E.post({ secret: SEC, read: true, subj: 'kokugo' }), { ok: true, rows: [], days: {}, daysBy: {}, kids: [], devs: 0, at: '', ver: 1 });
+  eq('read needs secret', E.post({ secret: 'nope', read: true, subj: 'shakai' }), { ok: false, err: 'secret', ver: 2 });
+  eq('read empty', E.post({ secret: SEC, read: true, subj: 'kokugo' }), { ok: true, rows: [], days: {}, daysBy: {}, kids: [], devs: 0, at: '', ver: 2 });
   // 件数の上限
   const many = Array.from({ length: 200 }, (_, i) => row(100 + i));
   for (let k = 0; k < 4; k++) w('devbig001', 'rika', many.map((x, i) => ({ ...x, n: 1000 + k * 200 + i })));
@@ -83,13 +83,13 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
   eq('write secret can write only', E.post({ secret: W, ping: true }).can, { write: true, read: false });
   eq('read secret can read only', E.post({ secret: RD, ping: true }).can, { write: false, read: true });
   eq('write ok', E.post({ secret: W, ...base, rows: [row(0)] }).added, 1);
-  eq('write secret cannot read', E.post({ secret: W, read: true, subj: 'shakai' }), { ok: false, err: 'secret', ver: 1 });
-  eq('read secret cannot write', E.post({ secret: RD, ...base, rows: [row(1)] }), { ok: false, err: 'readonly', ver: 1 });
+  eq('write secret cannot read', E.post({ secret: W, read: true, subj: 'shakai' }), { ok: false, err: 'secret', ver: 2 });
+  eq('read secret cannot write', E.post({ secret: RD, ...base, rows: [row(1)] }), { ok: false, err: 'readonly', ver: 2 });
   eq('read secret reads', E.post({ secret: RD, read: true, subj: 'shakai' }).rows.length, 1);
   eq('nothing written by read secret', E.sheets['まちがい'].getLastRow(), 2);
   // 読む用が短い・書く用と同じ：設定まちがいとして、すべて断る
-  eq('short read secret = config error', makeEnv(W, 'short').post({ secret: W, ping: true }), { ok: false, err: 'config', ver: 1 });
-  eq('same read secret = config error', makeEnv(W, W).post({ secret: W, ping: true }), { ok: false, err: 'config', ver: 1 });
+  eq('short read secret = config error', makeEnv(W, 'short').post({ secret: W, ping: true }), { ok: false, err: 'config', ver: 2 });
+  eq('same read secret = config error', makeEnv(W, W).post({ secret: W, ping: true }), { ok: false, err: 'config', ver: 2 });
 }
 
 // 5) お子さんの呼び名と、お子さんごとの学習量
@@ -107,6 +107,79 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
   // 呼び名を変えたら、学習量の行にもあとから反映される
   w('devaaaa1', 'たろう君', [], { '2026-11-16': { n: 11, ok: 9, cards: 0 } });
   eq('label updated', E.post({ secret: SEC, read: true, subj: 'shakai' }).kids[0], { dev: 'devaaaa1', label: 'たろう君' });
+}
+
+// 6) ごほうびのしくみ：ポイント・ボーナス・バッジ・申請・承認・却下・応援
+{
+  const W = 'write-secret-fam1', RD = 'read-secret-fam22';
+  const E = makeEnv(W, RD);
+  const ev = (s, o = {}) => ({ s, d: '2026-11-17', subj: 'shakai', cat: 'tokai', catName: '東海地方', ok: true, lv: 2, sec: 10, ...o });
+  const send = (events, dev = 'kidaaaa1', label = 'たろう') => E.post({ secret: W, dev, subj: 'shakai', subjName: '社会', label, rows: [], events });
+  // 10 問（正解 7）：10×2 + 7 = 27pt、はじめの一歩 +10
+  let r = send(Array.from({ length: 10 }, (_, i) => ev(i, { ok: i < 7 })));
+  eq('points for 10 answers', [r.fam.gained, r.evAcked, r.fam.state.balance], [37, 9, 37]);
+  eq('first badge', r.fam.awards.filter((a) => a.reason === 'badge').map((a) => a.id), ['first']);
+  // 同じ記録をもう一度送っても増えない
+  r = send(Array.from({ length: 10 }, (_, i) => ev(i, { ok: i < 7 })));
+  eq('resend counts nothing', [r.fam.gained, r.fam.state.balance], [0, 37]);
+  // さらに 10 問（全問正解）で 1 日 20 問：+30 +25
+  r = send(Array.from({ length: 10 }, (_, i) => ev(10 + i)));
+  eq('day bonus', [r.fam.gained, r.fam.state.balance, r.fam.awards.some((a) => a.reason === 'bonus')], [55, 92, true]);
+  // ボーナスは 1 日 1 回
+  r = send([ev(20)]); eq('bonus once a day', r.fam.gained, 3);
+  // 3 教科の日・復習ゼロ（その日に 1 回）
+  r = send([ev(21, { subj: 'kokugo', cat: 'imi' }), ev(22, { subj: 'rika', cat: 'denki' }), { s: 23, d: '2026-11-17', k: 'review' }, { s: 24, d: '2026-11-17', k: 'review' }]);
+  eq('all3 + review badge once', r.fam.awards.filter((a) => a.reason === 'badge').map((a) => a.id).sort(), ['all3', 'review']);
+  eq('badge counts in state', r.fam.state.badges.filter((b) => b.count).map((b) => b.id).sort(), ['all3', 'first', 'review']);
+  // 連続日数：翌日と翌々日 → 3 日連続
+  send([ev(25, { d: '2026-11-18' })]);
+  r = send([ev(26, { d: '2026-11-19' }), { s: 27, d: '2026-11-19', k: 'review' }]);
+  eq('streak3 + review again next day', r.fam.awards.filter((a) => a.reason === 'badge').map((a) => a.id).sort(), ['review', 'streak3']);
+  const bal = r.fam.state.balance;
+  // ごほうび：保護者が登録 → お子さんが申請 → 却下で返却 → 申請 → 承認
+  const P = (o) => E.post({ secret: RD, ...o });
+  eq('child cannot add rewards', E.post({ secret: W, act: 'reward_add', name: 'x', cost: 1 }).err, 'secret');
+  const id1 = P({ act: 'reward_add', emoji: '🎮', name: 'ゲーム30分', cost: 100 }).id;
+  const id2 = P({ act: 'reward_add', emoji: '🍰', name: 'ケーキ', cost: 100000 }).id;
+  eq('reward ids', [id1, id2], [1, 2]);
+  const C = (o) => E.post({ secret: W, dev: 'kidaaaa1', label: 'たろう', ...o });
+  eq('child sees rewards', C({ act: 'state' }).state.rewards.map((x) => x.name), ['ゲーム30分', 'ケーキ']);
+  eq('not enough points', C({ act: 'request', rewardId: id2 }).err, 'points');
+  r = C({ act: 'request', rewardId: id1 });
+  eq('request holds points', [r.ok, r.state.balance, r.state.requests[0].status], [true, bal - 100, 'pending']);
+  eq('parent sees pending', P({ act: 'summary', today: '2026-11-19' }).pending, 1);
+  eq('reject refunds', [P({ act: 'decide', id: 1, approve: false, note: 'またこんど' }).ok, C({ act: 'state' }).state.balance], [true, bal]);
+  eq('cannot decide twice', P({ act: 'decide', id: 1, approve: true }).err, 'done');
+  C({ act: 'request', rewardId: id1 });
+  eq('approve keeps points spent', [P({ act: 'decide', id: 2, approve: true }).ok, C({ act: 'state' }).state.balance, C({ act: 'state' }).state.requests[0].status], [true, bal - 100, 'approved']);
+  eq('child cannot approve', C({ act: 'decide', id: 2, approve: true }).err, 'secret');
+  // 非表示にしたごほうびは、お子さんに出ない・申請できない
+  P({ act: 'reward_update', id: id1, hidden: true });
+  eq('hidden reward', [C({ act: 'state' }).state.rewards.map((x) => x.id), C({ act: 'request', rewardId: id1 }).err], [[2], 'notfound']);
+  // 応援：全員あて・ひとりあて、読んだら消える
+  P({ act: 'send', to: '*', stamp: '💮 よくできました', text: 'がんばってるね' });
+  P({ act: 'send', to: 'kidbbbb2', stamp: '', text: 'はなこへ' });
+  let st = C({ act: 'state' }).state;
+  eq('child sees only own/all messages', st.messages.map((m) => m.text), ['がんばってるね']);
+  st = C({ act: 'read_msgs', ids: [st.messages[0].id] }).state;
+  eq('read message disappears', st.messages.length, 0);
+  eq('parent sees read status', P({ act: 'messages' }).messages.find((m) => m.to === '*').readBy, ['kidaaaa1']);
+  // 保護者の「ようす」
+  const sm = P({ act: 'summary', today: '2026-11-19' });
+  eq('summary today', [sm.today.solved, sm.streak, sm.week.solved], [1, 3, 25]);
+  eq('kids list', P({ act: 'kids' }).kids.map((k) => [k.dev, k.label]), [['kidaaaa1', 'たろう']]);
+  eq('ledger newest first', P({ act: 'ledger', limit: 3 }).ledger.length, 3);
+  // 端末を外す → その端末の記録は受け付けない
+  P({ act: 'block', kid: 'kidaaaa1', block: true });
+  eq('blocked device refused', [send([ev(30)]).err, C({ act: 'state' }).err], ['blocked', 'blocked']);
+  P({ act: 'block', kid: 'kidaaaa1', block: false });
+  eq('unblocked', send([ev(30)]).ok, true);
+  // 合言葉を分けていない受け口では、保護者の操作はできない（お子さんの端末から承認できてしまうため）
+  const single = makeEnv('only-one-secret-123');
+  eq('parent actions need split secrets', single.post({ secret: 'only-one-secret-123', act: 'rewards' }).err, 'need_split');
+  // 2 人目のお子さんは、別にポイントがたまる
+  r = send([ev(0, { d: '2026-11-19' })], 'kidbbbb2', 'はなこ');
+  eq('second child separate balance', [r.fam.state.balance, r.fam.state.messages.map((m) => m.text)], [13, ['はなこへ', 'がんばってるね']]);
 }
 
 console.log(fail ? `${fail} failures` : 'apps-script: all ok');
