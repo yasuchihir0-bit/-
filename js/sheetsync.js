@@ -10,6 +10,8 @@
   const CFG_KEY = 'tokai-sheet-cfg', ST_KEY = 'tokai-sheet-state', DEV_KEY = 'tokai-device';
   const URL_RE = /^https:\/\/script\.google\.com\/(?:a\/macros\/[A-Za-z0-9.-]+\/|macros\/)s\/[A-Za-z0-9_-]{10,}\/exec$/;
   const MIN_SECRET = 12;
+  const MIN_VER = 1;  // 受け口（Code.gs）の版番号が、これより古いときは、新しくしてもらう
+  const LABEL_KEY = 'tokai-sheet-label';
   const BATCH = 150, MAX_BATCHES = 6, TIMEOUT = 25000, DAYS_SENT = 30;
   const remoteKey = (s) => `tokai-${s}-remote`;
 
@@ -30,8 +32,12 @@
 
   const config = () => {
     const c = parse(ls.get(CFG_KEY));
-    return c && typeof c.url === 'string' && URL_RE.test(c.url) && typeof c.secret === 'string' && c.secret.length >= MIN_SECRET ? { url: c.url, secret: c.secret } : null;
+    return c && typeof c.url === 'string' && URL_RE.test(c.url) && typeof c.secret === 'string' && c.secret.length >= MIN_SECRET
+      ? { url: c.url, secret: c.secret, can: { write: !(c.can && c.can.write === false), read: !(c.can && c.can.read === false) } } : null;
   };
+  /* お子さんの呼び名（保護者画面に出る。端末ごと） */
+  const getLabel = () => String(ls.get(LABEL_KEY) || '').slice(0, 20);
+  const setLabel = (v) => { v = String(v || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, 20); if (v) ls.set(LABEL_KEY, v); else ls.del(LABEL_KEY); return v; };
   const state = () => {
     const s = parse(ls.get(ST_KEY));
     return { acked: {}, lastOk: '', lastErr: '', unconfirmed: false, ...(s && typeof s === 'object' ? s : {}) };
@@ -43,12 +49,19 @@
     if (secret.length < MIN_SECRET) return { err: 'secret', message: `合言葉は ${MIN_SECRET} 文字以上です。Code.gs に書いた合言葉と同じものを入れてください。` };
     return null;
   };
-  function setConfig(url, secret) {
+  function setConfig(url, secret, can) {
     url = String(url || '').trim(); secret = String(secret || '').trim();
     const bad = checkInput(url, secret);
     if (bad) return bad;
-    ls.set(CFG_KEY, JSON.stringify({ url, secret }));
+    ls.set(CFG_KEY, JSON.stringify({ url, secret, can: { write: !(can && can.write === false), read: !(can && can.read === false) } }));
     return { ok: true };
+  }
+  /* 受け口が「この合言葉では書けない／読めない」と答えたとき、この端末の役わりを覚えておく */
+  function setCan(patch) {
+    const c = parse(ls.get(CFG_KEY));
+    if (!c) return;
+    c.can = { ...(c.can || {}), ...patch };
+    ls.set(CFG_KEY, JSON.stringify(c));
   }
   function clearConfig() { ls.del(CFG_KEY); ls.del(ST_KEY); }
 
@@ -74,7 +87,10 @@
   const ERR = {
     secret: '合言葉がちがいます。Code.gs に書いた合言葉と同じか確かめてください。',
     format: '受け口が記録の形を受け取れませんでした。',
+    config: '受け口の合言葉の設定がまちがっています。Code.gs の SECRET と READ_SECRET（12 文字以上で、たがいにちがうもの）を確かめてください。',
   };
+  const OLD = '受け口（Code.gs）が古いようです。最新の Code.gs に貼りかえて、デプロイを更新してください。';
+  const verOf = (j) => (j && Number.isInteger(j.ver) ? j.ver : 0);
   const NET = '通信できませんでした。ネットにつながっているか確かめてください。';
   const REFUSED = '受け口が受け付けませんでした。デプロイの設定（アクセスできるユーザー：全員）と、アドレスを確かめてください。';
 
@@ -86,7 +102,12 @@
     const r = await send({ url, secret }, { ping: true }, true);
     if (r.fail) return { err: 'net', message: NET };
     if (!r.read) return { ok: true, unknown: true, message: '送れましたが、返事は確認できませんでした。記録の送受信がうまくいくか、あとで確かめてください。' };
-    if (r.j && r.j.ok) return { ok: true, message: 'つながりました。' };
+    if (r.j && r.j.ok) {
+      if (verOf(r.j) < MIN_VER) return { err: 'old', message: OLD };
+      const can = r.j.can || { write: true, read: true };
+      const what = can.write && can.read ? '記録を送ることも、見ることもできます' : can.write ? 'この合言葉では、記録を送れます（見ることはできません）' : 'この合言葉では、記録を見られます（送ることはできません）';
+      return { ok: true, can, message: `つながりました。${what}。` };
+    }
     return { err: (r.j && r.j.err) || 'fail', message: ERR[r.j && r.j.err] || REFUSED };
   }
 
@@ -95,6 +116,7 @@
   function flush(opt) {
     const c = config();
     if (!c) return Promise.resolve({ skipped: true });
+    if (!c.can.write) return Promise.resolve({ skipped: true, readonly: true }); // 見る専用の合言葉の端末は、送らない
     if (running) return running;
     running = (async () => {
       const dev = device(), key = `${dev}:${opt.subject}`;
@@ -108,11 +130,13 @@
         const unsent = (opt.getLog() || []).filter((e) => e && Number.isInteger(e.n) && e.n > after).sort((a, b) => a.n - b.n).slice(0, BATCH);
         if (!unsent.length && (!first || !Object.keys(days).length)) break;
         const rows = unsent.map((e) => ({ n: e.n, d: e.d, t: e.t, cat: e.cat, catName: opt.catName ? opt.catName(e.cat) : e.cat, m: e.m, g: e.g, q: e.q, ans: e.ans, given: e.given === undefined ? null : e.given }));
-        const r = await send(c, { dev, subj: opt.subject, subjName: opt.subjectName, rows, days: first ? days : undefined }, true);
+        const r = await send(c, { v: MIN_VER, dev, subj: opt.subject, subjName: opt.subjectName, label: getLabel(), rows, days: first ? days : undefined }, true);
         first = false;
         if (r.fail) { st.lastErr = '通信できませんでした。あとでもう一度送ります。'; result = { err: 'net' }; break; }
         if (!r.read) { st.unconfirmed = true; sent += rows.length; result = { ok: true, unconfirmed: true, sent }; break; }
+        if (r.j && r.j.err === 'readonly') { setCan({ write: false }); st.lastErr = ''; result = { skipped: true, readonly: true }; break; }
         if (!r.j || !r.j.ok) { st.lastErr = ERR[r.j && r.j.err] || REFUSED; result = { err: (r.j && r.j.err) || 'fail' }; break; }
+        if (verOf(r.j) < MIN_VER) { st.lastErr = OLD; result = { err: 'old' }; break; }
         if (Number.isInteger(r.j.acked) && r.j.acked >= 0) st.acked[key] = r.j.acked; else if (unsent.length) st.acked[key] = unsent[unsent.length - 1].n;
         st.unconfirmed = false; st.lastErr = ''; st.lastOk = new Date().toISOString();
         sent += rows.length; result = { ok: true, sent };
@@ -136,12 +160,15 @@
   async function pull(opt) {
     const c = config();
     if (!c) return { skipped: true };
-    const r = await send(c, { read: true, subj: opt.subject, exclude: device() }, false);
+    if (!c.can.read) return { skipped: true, writeonly: true }; // 送る専用の合言葉の端末は、読まない
+    const r = await send(c, { v: MIN_VER, read: true, subj: opt.subject, exclude: device() }, false);
     const st = state();
     if (r.fail) { st.lastErr = '記録を読みこめませんでした。通信できたか、アドレスが正しいか確かめてください。'; saveState(st); return { err: 'net' }; }
+    if (r.j && r.j.err === 'secret') { st.lastErr = ERR.secret; saveState(st); return { err: 'secret' }; }
     if (!r.j || !r.j.ok) { st.lastErr = ERR[r.j && r.j.err] || REFUSED; saveState(st); return { err: (r.j && r.j.err) || 'fail' }; }
     const j = r.j;
-    const out = { at: typeof j.at === 'string' ? j.at : '', fetched: new Date().toISOString(), devs: Math.max(0, +j.devs || 0), log: Array.isArray(j.rows) ? j.rows : [], days: j.days && typeof j.days === 'object' ? j.days : {} };
+    if (verOf(j) < MIN_VER) { st.lastErr = OLD; saveState(st); return { err: 'old' }; }
+    const out = { at: typeof j.at === 'string' ? j.at : '', fetched: new Date().toISOString(), devs: Math.max(0, +j.devs || 0), log: Array.isArray(j.rows) ? j.rows : [], days: j.days && typeof j.days === 'object' ? j.days : {}, daysBy: j.daysBy && typeof j.daysBy === 'object' ? j.daysBy : {}, kids: Array.isArray(j.kids) ? j.kids : [] };
     out.log.sort((a, b) => (`${a.d} ${a.t}` < `${b.d} ${b.t}` ? -1 : `${a.d} ${a.t}` > `${b.d} ${b.t}` ? 1 : (a.n || 0) - (b.n || 0)));
     if (!ls.set(remoteKey(opt.subject), JSON.stringify(out))) { out.log = out.log.slice(-200); ls.set(remoteKey(opt.subject), JSON.stringify(out)); }
     st.lastPull = out.fetched; st.lastErr = '';
@@ -154,6 +181,7 @@
     const f = await flush(opt);
     if (f && f.err) return f;
     const p = await pull(opt);
+    if (p && p.skipped) return { skipped: true, sent: (f && f.sent) || 0 };
     return p && p.err ? p : { ok: true, sent: (f && f.sent) || 0, count: p.count || 0, devs: p.devs || 0, unconfirmed: !!(f && f.unconfirmed) };
   }
 
@@ -162,8 +190,8 @@
     const key = `${device()}:${opt.subject}`;
     const after = Number.isInteger(st.acked[key]) ? st.acked[key] : -1;
     const pending = c ? (opt.getLog() || []).filter((e) => e && Number.isInteger(e.n) && e.n > after).length : 0;
-    return { configured: !!c, url: c ? c.url : '', pending, lastOk: st.lastOk, lastPull: st.lastPull || '', lastErr: st.lastErr, unconfirmed: !!st.unconfirmed };
+    return { configured: !!c, url: c ? c.url : '', can: c ? c.can : { write: false, read: false }, label: getLabel(), pending, lastOk: st.lastOk, lastPull: st.lastPull || '', lastErr: st.lastErr, unconfirmed: !!st.unconfirmed };
   }
 
-  g.SheetSync = { setConfig, clearConfig, test, flush, flushSoon, pull, sync, status, MIN_SECRET };
+  g.SheetSync = { setConfig, clearConfig, getLabel, setLabel, test, flush, flushSoon, pull, sync, status, MIN_SECRET, MIN_VER };
 })(typeof window !== 'undefined' ? window : globalThis);

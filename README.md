@@ -240,6 +240,7 @@ node tests/check.js   # 国語・社会・理科で、選択肢の重複・正�
 お子さんの端末でまちがえた問題と答えた内容を、**お子さんがログインしなくても**、保護者の端末のアプリの保護者画面で見られます。
 アプリを claude.ai の外（Netlify などの無料の置き場所）に置き、保護者の Google アカウントに「受け口」（`tools/apps-script/Code.gs`）を作ります。
 **設定のしかたは [`tools/apps-script/SETUP.md`](tools/apps-script/SETUP.md)** を見てください（最初に 1 回だけ、20〜30 分ほど）。
+仕様と、ほかの人も使えるようにするための方針は [`docs/SPEC.md`](docs/SPEC.md) にあります（受け口は家庭ごと。運営は記録を預かりません）。
 
 - 送受信のプログラムは `js/sheetsync.js`、受け口は `tools/apps-script/Code.gs` です。
 - 書くときも読むときも合言葉が必要です。まちがいは、保護者のスプレッドシート（「まちがい」「学習量」シート）にもたまります。

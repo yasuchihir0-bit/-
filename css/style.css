@@ -392,3 +392,4 @@ button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent)
 .p-sheet label { display: block; margin-top: 8px; }
 .p-field { display: block; width: 100%; font: inherit; font-size: 15px; padding: 10px 12px; margin-top: 2px; border-radius: 10px; border: 2px solid var(--line); background: var(--card); color: var(--text); }
 .p-field:focus { outline: none; border-color: var(--accent); }
+.p-kid { color: var(--accent); }

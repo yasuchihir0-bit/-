@@ -96,6 +96,7 @@
         if (!e || typeof e !== 'object' || !cats.has(e.cat) || !isDate(e.d) || typeof e.q !== 'string') return;
         const o = { d: e.d, t: /^\d{2}:\d{2}$/.test(e.t) ? e.t : '', cat: e.cat, q: str(e.q), ans: str(e.ans, 500), g: e.g === 'hard' ? 'hard' : 'ng', m: ['quiz', 'write', 'essay', 'card', 'kanji'].includes(e.m) ? e.m : 'quiz' };
         if (typeof e.given === 'string') o.given = str(e.given, 600);
+        if (typeof e.dev === 'string' && /^[a-z0-9]{4,20}$/.test(e.dev)) o.dev = e.dev; // どの端末（お子さん）の記録か
         if (Number.isInteger(e.n) && e.n >= 0) o.n = e.n;
         if (Number.isInteger(e.b)) o.b = Math.max(-1, Math.min(5, e.b));
         if (typeof e.exp === 'string' && e.exp) o.exp = str(e.exp);
@@ -190,7 +191,11 @@
       const r = JSON.parse(localStorage.getItem(SYNC.remoteKey(SYNC_S)));
       if (!r || !Array.isArray(r.log)) return null;
       const c = sanitize({ log: r.log, days: r.days });
-      return { log: c.log, days: c.days, at: typeof r.at === 'string' ? r.at.slice(0, 30) : '', devs: +r.devs || 1 };
+      // お子さんごとの呼び名と学習量（複数のお子さんがいる家庭用）
+      const kids = (Array.isArray(r.kids) ? r.kids : []).filter((k) => k && /^[a-z0-9]{4,20}$/.test(k.dev)).slice(0, 12).map((k) => ({ dev: k.dev, label: typeof k.label === 'string' ? k.label.slice(0, 20) : '' }));
+      const daysBy = {};
+      kids.forEach((k) => { const v = r.daysBy && r.daysBy[k.dev]; if (v && typeof v === 'object') daysBy[k.dev] = sanitize({ days: v }).days; });
+      return { log: c.log, days: c.days, kids, daysBy, at: typeof r.at === 'string' ? r.at.slice(0, 30) : '', devs: kids.length || +r.devs || 1 };
     } catch (e) { return null; }
   }
 
@@ -1545,6 +1550,7 @@
   const P_MODE = { quiz: 'クイズ', write: '書き取り', essay: '記述', card: '暗記カード', kanji: '漢字で書く' };
   /* 送られた日時を、この端末の時刻で「11/16 21:45」の形にする */
   const atText = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  let pKid = '';        // 見ているお子さん（端末）。空ならぜんいん
   let pSheetMsg = '';   // スプレッドシートへの送信先の設定のお知らせ
   let pSrc = null;      // 'local'（この端末）/ 'remote'（ほかの端末）
   let pSyncMsg = '';    // 同期の結果のお知らせ
@@ -1553,15 +1559,18 @@
   function sheetCard() {
     if (!SHEET || (SYNC && SYNC.available())) return '';
     const st = SHEET.status(sheetOpt());
+    const role = !st.configured ? '' : st.can.write && st.can.read ? 'この端末は、記録を送ることも見ることもできます。' : st.can.write ? 'この端末は、記録を送る専用です（見るには、保護者の端末で設定します）。' : 'この端末は、記録を見る専用です。';
     const line = !st.configured ? 'まだ設定されていません。'
       : `${st.lastOk ? `この端末から最後に送った日時：${atText(st.lastOk)}` : 'この端末からは、まだ送っていません'}${st.pending ? `／まだ送っていない記録 ${st.pending} 件` : ''}${st.unconfirmed ? '／返事が読めない環境のため、届いたかは確認できません（スプレッドシートで確かめてください）' : ''}${st.lastErr ? `／${esc(st.lastErr)}` : ''}`;
     return `<div class="card p-sheet">
       <strong>📨 お子さんの端末と記録をやりとりする</strong>
-      <p class="small" style="margin:6px 0 8px">お子さんの端末でまちがえた問題と答えた内容を、保護者の Google アカウント経由で、保護者の端末のこの画面で見られます。お子さんのログインはいりません。<b>お子さんの端末と保護者の端末の両方で</b>、同じアドレスと合言葉を、一度だけ設定します。設定のしかたは README の「保護者の端末で見る（Google 経由）」を見てください。</p>
-      <p class="small" id="shst" style="margin:0 0 8px">${st.configured ? '設定ずみ。' : ''}${line}</p>
+      <p class="small" style="margin:6px 0 8px">お子さんの端末でまちがえた問題と答えた内容を、保護者の Google アカウント経由で、保護者の端末のこの画面で見られます。お子さんのログインはいりません。<b>お子さんの端末と保護者の端末の両方で</b>、受け口のアドレスと合言葉を、一度だけ設定します（お子さんの端末には「送る合言葉」、保護者の端末には「見る合言葉」。分けていなければ同じ合言葉です）。送られるのは、まちがえた問題・正解・答えた内容・日付・呼び名だけです。設定のしかたは tools/apps-script/SETUP.md を見てください。</p>
+      <p class="small" id="shst" style="margin:0 0 8px">${st.configured ? `設定ずみ。${role}` : ''}${line}</p>
+      <label class="small" for="shlabel">この端末を使うお子さんの呼び名（保護者画面に出ます。例：たろう）</label>
+      <input id="shlabel" class="p-field" type="text" maxlength="20" autocomplete="off" placeholder="空でもかまいません" value="${esc(st.label)}">
       <label class="small" for="shurl">受け口のアドレス</label>
       <input id="shurl" class="p-field" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(st.url)}">
-      <label class="small" for="shsec">合言葉（Code.gs に書いたもの）</label>
+      <label class="small" for="shsec">合言葉（お子さんの端末：記録を送る合言葉／保護者の端末：記録を見る合言葉）</label>
       <input id="shsec" class="p-field" type="password" autocomplete="off" placeholder="${st.configured ? '（設定ずみ。かえるときだけ入れ直す）' : '12 文字以上'}">
       <p style="margin:8px 0 0"><button class="btn sub" id="shsave" type="button">保存してためす</button>${st.configured ? ' <button class="btn ghost" id="shoff" type="button">送信をやめる</button>' : ''} <span class="small" id="shmsg">${esc(pSheetMsg)}</span></p>
     </div>`;
@@ -1569,12 +1578,18 @@
   function parents(range = 'week', cid = '', shown = 30) {
     reset();
     const T = today();
-    const viaSheet = !(SYNC && SYNC.available()) && !!SHEET && SHEET.status(sheetOpt()).configured; // 保護者のスプレッドシート経由
+    const viaSheet = !(SYNC && SYNC.available()) && !!SHEET && (() => { const q = SHEET.status(sheetOpt()); return q.configured && q.can.read; })(); // Google 経由で読める端末
     const syncOn = (SYNC && SYNC.available()) || viaSheet;
     const remote = remoteData();
     // 記録のない端末（保護者の端末）では、ほかの端末の記録を先に見せる
     const isRemote = !!remote && (pSrc || ((store.log || []).length ? 'local' : 'remote')) === 'remote';
-    const DATA = isRemote ? remote : { log: store.log || [], days: store.days };
+    // 複数のお子さんがいるときは、お子さんごとにしぼりこめる
+    const kids = isRemote && remote.kids.length > 1 ? remote.kids : [];
+    const kidSel = kids.some((k) => k.dev === pKid) ? pKid : '';
+    const kidName = (dev) => { const k = (remote ? remote.kids : []).find((x) => x.dev === dev); return (k && k.label) || `端末 ${String(dev || '').slice(0, 4)}`; };
+    const DATA = isRemote
+      ? { log: kidSel ? remote.log.filter((e) => e.dev === kidSel) : remote.log, days: kidSel && remote.daysBy[kidSel] ? remote.daysBy[kidSel] : kidSel ? {} : remote.days }
+      : { log: store.log || [], days: store.days };
     const from = P_RANGES[range][1] == null ? '' : addDays(T, -P_RANGES[range][1]);
     const inRange = DATA.log.filter((e) => e.d >= from && catOf(K.id, e.cat));
     const list = inRange.filter((e) => !cid || e.cat === cid).slice().reverse();
@@ -1608,7 +1623,7 @@
       const n = times[`${e.q}|${e.ans}`];
       return `<li class="p-item">
         <div class="p-head"><span><span class="tag" style="--tc:${K.color}">${esc(catOf(K.id, e.cat).name)}</span> <span class="small">${md(e.d)} ${esc(e.t)}・${P_MODE[e.m]}</span></span>
-          <span class="small">${n > 1 ? `<b class="p-rep">${n} 回目</b> ` : ''}${now(e)}</span></div>
+          <span class="small">${kids.length > 1 && !kidSel && e.dev ? `<b class="p-kid">${esc(kidName(e.dev))}</b> ` : ''}${n > 1 ? `<b class="p-rep">${n} 回目</b> ` : ''}${now(e)}</span></div>
         ${psg(e)}
         <div class="p-q">${rich(e.q)}</div>
         <dl class="p-ans">
@@ -1632,6 +1647,8 @@
         <p style="margin:8px 0 0"><button class="btn sub" id="psync" type="button">🔄 記録を更新する</button> <span class="small" id="psyncmsg">${esc(pSyncMsg)}</span></p>
       </div>` : ''}
       ${sheetCard()}
+      ${kids.length > 1 ? `<div class="row" style="margin-bottom:10px"><span class="small">お子さん</span>
+        <div class="seg" role="group" aria-label="お子さん"><button type="button" data-kid="" aria-pressed="${!kidSel}">ぜんいん</button>${kids.map((k) => `<button type="button" data-kid="${esc(k.dev)}" aria-pressed="${k.dev === kidSel}">${esc(k.label || `端末 ${k.dev.slice(0, 4)}`)}</button>`).join('')}</div></div>` : ''}
       <div class="row" style="margin-bottom:10px"><span class="small">期間</span>
         <div class="seg" role="group" aria-label="期間">${Object.entries(P_RANGES).map(([k, v]) => `<button type="button" data-r="${k}" aria-pressed="${k === range}">${v[0]}</button>`).join('')}</div></div>
       <div class="kpis big">
@@ -1661,6 +1678,7 @@
       </div>`);
     onAll('[data-r]', 'click', (e) => parents(e.currentTarget.dataset.r, cid));
     onAll('[data-src]', 'click', (e) => { pSrc = e.currentTarget.dataset.src; parents(range); });
+    onAll('[data-kid]', 'click', (e) => { pKid = e.currentTarget.dataset.kid; parents(range, cid); });
     const doSync = () => {
       const msg = $app.querySelector('#psyncmsg'), btn = $app.querySelector('#psync');
       if (!btn) return;
@@ -1681,8 +1699,9 @@
       const msg = $app.querySelector('#shmsg'), btn = $app.querySelector('#shsave');
       btn.disabled = true; msg.textContent = 'ためしています…';
       const t = await SHEET.test(url, sec);
+      SHEET.setLabel($app.querySelector('#shlabel').value);
       if (t.ok) {
-        SHEET.setConfig(url, sec);
+        SHEET.setConfig(url, sec, t.can);
         const f = await SHEET.flush(sheetOpt());
         pSheetMsg = `${t.message}${f && f.sent ? `この端末の記録 ${f.sent} 件を送りました。` : ''}`;
       } else pSheetMsg = t.message;
