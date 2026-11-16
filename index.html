@@ -68,6 +68,20 @@
   .sync .actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .sync button.quiet { color: var(--muted); border-color: var(--line); }
   .setup { border-color: var(--accent); border-width: 2px; }
+  .move { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 18px; font-size: 14px; }
+  .move > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+  .move .body { display: grid; gap: 10px; margin-top: 8px; }
+  .move p { margin: 0; }
+  .move .muted { color: var(--muted); font-size: 13px; }
+  .move .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .move button { font: inherit; font-weight: 700; color: var(--accent); background: transparent; border: 2px solid var(--accent); border-radius: 10px; padding: 8px 14px; min-height: 44px; cursor: pointer; }
+  .move button.main { background: var(--accent); color: #fff; }
+  .move button:disabled { opacity: .5; cursor: default; }
+  .move textarea { width: 100%; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px; resize: vertical; word-break: break-all; }
+  .move table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .move th, .move td { border-bottom: 1px solid var(--line); padding: 6px 4px; text-align: right; font-size: 13px; }
+  .move th:first-child, .move td:first-child { text-align: left; }
+  .move .warn { color: #c62828; }
   @media (prefers-reduced-motion: reduce) { a.subject { transition: none; } a.subject:hover { transform: none; } }
 </style>
 
@@ -119,6 +133,30 @@
     <button type="button" id="syncBtn">🔄 いますぐ同期する</button>
   </section>
 
+  <details class="move" id="move">
+    <summary>📦 記録をまとめて移す（国語・社会・理科）</summary>
+    <div class="body">
+      <p class="muted">claude.ai の公開ページと、置き場所のアプリの間や、ほかの端末に、3 教科の記録をまとめて移します。<b>移す先のアプリで問題を解く前に</b>移してください（読みこむと、移す先の記録は置きかわります）。</p>
+      <div class="actions">
+        <button type="button" id="moveOut">まとめて書き出す</button>
+        <button type="button" id="moveIn">まとめて読みこむ</button>
+      </div>
+      <div id="moveOutBox" hidden>
+        <p>次の文字を全部コピーして、移す先のアプリの「まとめて読みこむ」に貼りつけます。同じ端末の中でコピー・貼りつけをするのが確実です。</p>
+        <textarea id="moveOutText" rows="5" readonly aria-label="書き出した記録"></textarea>
+        <div class="actions"><button type="button" id="moveCopy">コピーする</button></div>
+        <p class="muted" id="moveOutMsg" aria-live="polite"></p>
+      </div>
+      <div id="moveInBox" hidden>
+        <p>「まとめて書き出す」でコピーした文字を、ここに貼りつけます。</p>
+        <textarea id="moveInText" rows="5" aria-label="読みこむ記録"></textarea>
+        <div class="actions"><button type="button" id="moveCheck">中身を確かめる</button></div>
+        <div id="movePreview" hidden></div>
+        <p class="muted" id="moveInMsg" aria-live="polite"></p>
+      </div>
+    </div>
+  </details>
+
   <div class="notes">
     <p>東海中学校の公式のものではありません。学校とは関係のない、受験勉強用の非公式アプリです。</p>
     <p>学習の記録は、いま使っている端末のブラウザの中に保存されます。教科ごとに別々に記録されます。<span id="claudeNote" hidden>claude.ai にログインして開いているときは、まちがいの記録だけ、そのアカウント専用の場所にも保存されます（ほかの人からは見えません）。</span></p>
@@ -126,6 +164,89 @@
   </div>
 </main>
 
+<script>
+  /* 3 教科の記録をまとめて移す（書き出し・読みこみ）
+   *   書き出し：教科ごとの記録（tokai-<教科>-v1）だけ。受け口の設定・合言葉・呼び名は端末ごとのものなので入れない。
+   *   読みこみ：中身を見せて確かめてから、教科ごとに置きかえる。教科のページを開いたときに、あらためて安全な形に整える。
+   *   この端末がすでに受け口へ記録を送っていたときは、読みこんだまちがいに新しい番号をつけて、受け口に必ず送られるようにする。 */
+  (function () {
+    var SUBJ = [{ s: 'kokugo', name: '国語' }, { s: 'shakai', name: '社会' }, { s: 'rika', name: '理科' }];
+    var KIND = 'tokai-records', VER = 1;
+    var $ = function (id) { return document.getElementById(id); };
+    function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+    function parse(t) { try { return JSON.parse(t); } catch (e) { return null; } }
+    var keyOf = function (s) { return 'tokai-' + s + '-v1'; };
+    var okStore = function (d) { return d && typeof d === 'object' && d.stats && typeof d.stats === 'object' && d.cards && typeof d.cards === 'object'; };
+    function counts(d) {
+      if (!okStore(d)) return null;
+      return { cards: Object.keys(d.cards).length, log: Array.isArray(d.log) ? d.log.length : 0, days: d.days && typeof d.days === 'object' ? Object.keys(d.days).length : 0 };
+    }
+    var outBox = $('moveOutBox'), inBox = $('moveInBox'), outText = $('moveOutText'), inText = $('moveInText');
+    var preview = $('movePreview'), inMsg = $('moveInMsg'), outMsg = $('moveOutMsg');
+    var pending = null;
+
+    $('moveOut').addEventListener('click', function () {
+      var data = { kind: KIND, v: VER, at: new Date().toISOString(), subjects: {} }, n = 0;
+      SUBJ.forEach(function (x) {
+        var d = parse(get(keyOf(x.s)));
+        if (okStore(d)) { data.subjects[x.s] = d; n++; }
+      });
+      inBox.hidden = true; outBox.hidden = false;
+      if (!n) { outText.value = ''; outMsg.textContent = 'この端末には、まだ記録がありません。'; return; }
+      outText.value = JSON.stringify(data, function (k, v) { return k === 'img' ? undefined : v; });
+      outMsg.textContent = SUBJ.filter(function (x) { return data.subjects[x.s]; }).map(function (x) { return x.name; }).join('・') + 'の記録です（' + Math.ceil(outText.value.length / 1000) + ' 千文字）。';
+    });
+    $('moveCopy').addEventListener('click', function () {
+      var text = outText.value;
+      if (!text) return;
+      function fallback() { outText.focus(); outText.select(); outMsg.textContent = 'コピーできませんでした。選ばれた文字を、長押し（または Ctrl+A）でコピーしてください。'; }
+      try { navigator.clipboard.writeText(text).then(function () { outMsg.textContent = 'コピーしました。移す先のアプリで「まとめて読みこむ」に貼りつけてください。'; }, fallback); } catch (e) { fallback(); }
+    });
+    $('moveIn').addEventListener('click', function () { outBox.hidden = true; inBox.hidden = false; preview.hidden = true; inMsg.textContent = ''; inText.focus(); });
+
+    $('moveCheck').addEventListener('click', function () {
+      preview.hidden = true; pending = null;
+      var d = parse(inText.value.trim());
+      if (!d || d.kind !== KIND || d.v !== VER || !d.subjects || typeof d.subjects !== 'object') {
+        inMsg.textContent = 'まとめて書き出した記録ではないようです。「まとめて書き出す」でコピーした文字を、全部そのまま貼りつけてください（教科ごとの記録は、各教科の 📊 から読みこめます）。';
+        return;
+      }
+      var rows = SUBJ.map(function (x) { return { x: x, inc: counts(d.subjects[x.s]), cur: counts(parse(get(keyOf(x.s)))) }; }).filter(function (r) { return r.inc; });
+      if (!rows.length) { inMsg.textContent = '読みこめる記録が入っていません。'; return; }
+      pending = { d: d, rows: rows };
+      var lost = rows.some(function (r) { return r.cur && (r.cur.cards || r.cur.log); });
+      var cell = function (c) { return c ? c.cards + ' 問・まちがい ' + c.log + ' 件' : 'なし'; };
+      preview.innerHTML = '<table><thead><tr><th>教科</th><th>読みこむ記録</th><th>いまの記録（消えます）</th></tr></thead><tbody>' +
+        rows.map(function (r) { return '<tr><td>' + r.x.name + '</td><td>' + cell(r.inc) + '</td><td>' + cell(r.cur) + '</td></tr>'; }).join('') + '</tbody></table>' +
+        (lost ? '<p class="warn">この端末のいまの記録は、読みこむ記録で置きかわります（足し合わせではありません）。</p>' : '') +
+        '<div class="actions" style="margin-top:8px"><button type="button" class="main" id="moveDo">置きかえて読みこむ</button><button type="button" id="moveCancel">やめる</button></div>';
+      preview.hidden = false;
+      inMsg.textContent = (d.at ? '書き出した日時：' + new Date(d.at).toLocaleString('ja-JP') + '。' : '') + '中身を確かめて、よければ「置きかえて読みこむ」を押します。';
+      $('moveCancel').addEventListener('click', function () { preview.hidden = true; pending = null; inMsg.textContent = 'やめました。'; });
+      $('moveDo').addEventListener('click', doImport);
+    });
+
+    function doImport() {
+      if (!pending) return;
+      var dev = get('tokai-device'), st = parse(get('tokai-sheet-state')) || {}, acked = st.acked || {};
+      var done = [], failed = [];
+      pending.rows.forEach(function (r) {
+        var d = JSON.parse(JSON.stringify(pending.d.subjects[r.x.s]));
+        // この端末から受け口へ、すでにこの教科の記録を送っていたら、読みこんだまちがいを、その続きの番号にする
+        var last = dev ? acked[dev + ':' + r.x.s] : undefined;
+        if (typeof last === 'number' && last >= 0 && Array.isArray(d.log)) {
+          var next = last + 1;
+          d.log.forEach(function (e) { if (e && typeof e === 'object') e.n = next++; });
+          d.seq = next;
+        }
+        try { localStorage.setItem(keyOf(r.x.s), JSON.stringify(d)); done.push(r.x.name); } catch (e) { failed.push(r.x.name); }
+      });
+      pending = null; preview.hidden = true; inText.value = '';
+      inMsg.textContent = (done.length ? done.join('・') + 'の記録を読みこみました。教科を開くと、続きから使えます。' : '') +
+        (failed.length ? failed.join('・') + 'は、この端末の保存場所がいっぱいで読みこめませんでした。' : '');
+    }
+  })();
+</script>
 <script src="js/sync.js"></script>
 <script src="js/sheetsync.js"></script>
 <script>
