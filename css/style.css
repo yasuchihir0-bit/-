@@ -389,3 +389,6 @@ button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent)
 .p-sync .seg { display: flex; width: 100%; flex-wrap: nowrap; }
 .p-sync .seg button { min-width: 0; padding: 10px 6px; font-size: 15px; white-space: nowrap; }
 .p-sync .btn { min-height: 44px; padding: 8px 14px; }
+.p-sheet label { display: block; margin-top: 8px; }
+.p-field { display: block; width: 100%; font: inherit; font-size: 15px; padding: 10px 12px; margin-top: 2px; border-radius: 10px; border: 2px solid var(--line); background: var(--card); color: var(--text); }
+.p-field:focus { outline: none; border-color: var(--accent); }

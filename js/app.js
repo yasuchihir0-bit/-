@@ -145,6 +145,7 @@
     let kept = 0;
     for (let i = store.log.length - 1; i >= 0; i--) if (store.log[i].img && ++kept > IMG_KEEP) delete store.log[i].img;
     save();
+    pushSheet(true);
   }
   /* 手書きを小さな画像にする（どの画面の色でも読めるよう、こい灰色の線にそろえる） */
   function padImage() {
@@ -178,6 +179,10 @@
   const SYNC_S = APP.key.replace(/^tokai-/, '').replace(/-v\d+$/, ''); // kokugo / shakai / rika
   /* この端末の記録を claude.ai 側に保存する（公開ページで開いたときだけ。失敗しても何もしない） */
   const pushSync = () => { if (SYNC && SYNC.available()) { try { SYNC.upload(SYNC_S).catch(() => {}); } catch (e) { /* noop */ } } };
+  /* 保護者の Google スプレッドシートへ自動で送る（sheetsync.js。送り先を設定したときだけ動く） */
+  const SHEET = (typeof window !== 'undefined' && window.SheetSync) || null;
+  const sheetOpt = () => ({ subject: SYNC_S, subjectName: K.name, getLog: () => store.log || [], getDays: () => store.days || {}, catName: (id) => { const c = K.cats.find((x) => x.id === id); return c ? c.name : id; } });
+  const pushSheet = (soon) => { if (SHEET) { try { if (soon) SHEET.flushSoon(sheetOpt()); else SHEET.flush(sheetOpt()).catch(() => {}); } catch (e) { /* noop */ } } };
   /* ほかの端末から読みこんだ記録（sync.js が置いたもの） */
   function remoteData() {
     if (!SYNC) return null;
@@ -1121,6 +1126,7 @@
     clearInterval(timerId);
     session.done = true;
     pushSync();
+    pushSheet();
     setKeys(null);
     const rs = session.results;
     const ok = rs.filter((r) => r.ok).length;
@@ -1232,6 +1238,7 @@
   function flashResult() {
     session.done = true;
     pushSync();
+    pushSheet();
     setKeys(null);
     const rs = session.results;
     const cnt = (g) => rs.filter((r) => r.g === g).length;
@@ -1538,12 +1545,32 @@
   const P_MODE = { quiz: 'クイズ', write: '書き取り', essay: '記述', card: '暗記カード', kanji: '漢字で書く' };
   /* 送られた日時を、この端末の時刻で「11/16 21:45」の形にする */
   const atText = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  let pSheetMsg = '';   // スプレッドシートへの送信先の設定のお知らせ
   let pSrc = null;      // 'local'（この端末）/ 'remote'（ほかの端末）
   let pSyncMsg = '';    // 同期の結果のお知らせ
   let pSynced = false;  // この画面を開いてから、自動の同期をしたか
+  /* 「保護者のスプレッドシートに自動で送る」の設定欄（claude.ai の公開ページでは外に送れないので出さない） */
+  function sheetCard() {
+    if (!SHEET || (SYNC && SYNC.available())) return '';
+    const st = SHEET.status(sheetOpt());
+    const line = !st.configured ? 'まだ設定されていません。'
+      : `${st.lastOk ? `この端末から最後に送った日時：${atText(st.lastOk)}` : 'この端末からは、まだ送っていません'}${st.pending ? `／まだ送っていない記録 ${st.pending} 件` : ''}${st.unconfirmed ? '／返事が読めない環境のため、届いたかは確認できません（スプレッドシートで確かめてください）' : ''}${st.lastErr ? `／${esc(st.lastErr)}` : ''}`;
+    return `<div class="card p-sheet">
+      <strong>📨 お子さんの端末と記録をやりとりする</strong>
+      <p class="small" style="margin:6px 0 8px">お子さんの端末でまちがえた問題と答えた内容を、保護者の Google アカウント経由で、保護者の端末のこの画面で見られます。お子さんのログインはいりません。<b>お子さんの端末と保護者の端末の両方で</b>、同じアドレスと合言葉を、一度だけ設定します。設定のしかたは README の「保護者の端末で見る（Google 経由）」を見てください。</p>
+      <p class="small" id="shst" style="margin:0 0 8px">${st.configured ? '設定ずみ。' : ''}${line}</p>
+      <label class="small" for="shurl">受け口のアドレス</label>
+      <input id="shurl" class="p-field" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(st.url)}">
+      <label class="small" for="shsec">合言葉（Code.gs に書いたもの）</label>
+      <input id="shsec" class="p-field" type="password" autocomplete="off" placeholder="${st.configured ? '（設定ずみ。かえるときだけ入れ直す）' : '12 文字以上'}">
+      <p style="margin:8px 0 0"><button class="btn sub" id="shsave" type="button">保存してためす</button>${st.configured ? ' <button class="btn ghost" id="shoff" type="button">送信をやめる</button>' : ''} <span class="small" id="shmsg">${esc(pSheetMsg)}</span></p>
+    </div>`;
+  }
   function parents(range = 'week', cid = '', shown = 30) {
     reset();
     const T = today();
+    const viaSheet = !(SYNC && SYNC.available()) && !!SHEET && SHEET.status(sheetOpt()).configured; // 保護者のスプレッドシート経由
+    const syncOn = (SYNC && SYNC.available()) || viaSheet;
     const remote = remoteData();
     // 記録のない端末（保護者の端末）では、ほかの端末の記録を先に見せる
     const isRemote = !!remote && (pSrc || ((store.log || []).length ? 'local' : 'remote')) === 'remote';
@@ -1594,16 +1621,17 @@
     h(`
       <h1>👪 保護者画面</h1>
       <p class="lead">${esc(K.name)}で、お子さんがまちがえた問題と、そのとき答えた内容です。新しいものから順に出ます。</p>
-      ${SYNC && SYNC.available() ? `<div class="card p-sync">
+      ${syncOn ? `<div class="card p-sync">
         ${remote ? `<div class="seg" role="group" aria-label="どの端末の記録を見るか">
           <button type="button" data-src="local" aria-pressed="${!isRemote}">この端末の記録</button>
           <button type="button" data-src="remote" aria-pressed="${isRemote}">ほかの端末の記録</button>
         </div>` : ''}
         <p class="small" style="margin:${remote ? '8px' : '0'} 0 0">${isRemote
           ? `ほかの端末（${remote.devs} 台）で解いた記録です。${atText(remote.at) ? `最後に送られた日時：${atText(remote.at)}` : ''}`
-          : remote ? 'この端末で解いた記録です。' : 'お子さんの端末と同じ claude.ai アカウントでログインすると、お子さんの端末の記録がここに出ます。'}</p>
+          : remote ? 'この端末で解いた記録です。' : viaSheet ? 'お子さんの端末の記録は、保護者のスプレッドシート経由でここに届きます。まだ届いていないときは、お子さんが問題をまちがえたあとに、更新してください。' : 'お子さんの端末と同じ claude.ai アカウントでログインすると、お子さんの端末の記録がここに出ます。'}</p>
         <p style="margin:8px 0 0"><button class="btn sub" id="psync" type="button">🔄 記録を更新する</button> <span class="small" id="psyncmsg">${esc(pSyncMsg)}</span></p>
       </div>` : ''}
+      ${sheetCard()}
       <div class="row" style="margin-bottom:10px"><span class="small">期間</span>
         <div class="seg" role="group" aria-label="期間">${Object.entries(P_RANGES).map(([k, v]) => `<button type="button" data-r="${k}" aria-pressed="${k === range}">${v[0]}</button>`).join('')}</div></div>
       <div class="kpis big">
@@ -1638,13 +1666,30 @@
       if (!btn) return;
       btn.disabled = true; if (msg) msg.textContent = '更新しています…';
       const mine = session; // 画面が変わっていたら、かきかえない
-      SYNC.sync().then((r) => {
-        pSyncMsg = r.err ? SYNC.message(r) : `更新しました（ほかの端末の記録 ${(r.counts && r.counts[SYNC_S]) || 0} 件）`;
+      (viaSheet ? SHEET.sync(sheetOpt()) : SYNC.sync()).then((r) => {
+        pSyncMsg = viaSheet
+          ? (r.err ? (SHEET.status(sheetOpt()).lastErr || '同期できませんでした。') : `更新しました（ほかの端末の記録 ${r.count || 0} 件）`)
+          : (r.err ? SYNC.message(r) : `更新しました（ほかの端末の記録 ${(r.counts && r.counts[SYNC_S]) || 0} 件）`);
         if (session === mine && $app.querySelector('#psync')) parents(range, cid, shown);
       }, () => { pSyncMsg = '同期できませんでした。'; if (session === mine && $app.querySelector('#psync')) parents(range, cid, shown); });
     };
     on('#psync', 'click', doSync);
-    if (SYNC && SYNC.available() && !pSynced) { pSynced = true; doSync(); }
+    on('#shsave', 'click', async () => {
+      const url = $app.querySelector('#shurl').value.trim();
+      let sec = $app.querySelector('#shsec').value.trim();
+      if (!sec && SHEET.status(sheetOpt()).configured) sec = (() => { try { return JSON.parse(localStorage.getItem('tokai-sheet-cfg')).secret; } catch (e) { return ''; } })();
+      const msg = $app.querySelector('#shmsg'), btn = $app.querySelector('#shsave');
+      btn.disabled = true; msg.textContent = 'ためしています…';
+      const t = await SHEET.test(url, sec);
+      if (t.ok) {
+        SHEET.setConfig(url, sec);
+        const f = await SHEET.flush(sheetOpt());
+        pSheetMsg = `${t.message}${f && f.sent ? `この端末の記録 ${f.sent} 件を送りました。` : ''}`;
+      } else pSheetMsg = t.message;
+      if ($app.querySelector('#shsave')) parents(range, cid, shown);
+    });
+    on('#shoff', 'click', () => ask('スプレッドシートへの自動送信をやめますか？\nすでに送った記録は、スプレッドシートに残ります。', { ok: 'やめる' }).then((y) => { if (y) { SHEET.clearConfig(); pSheetMsg = '送信をやめました。'; parents(range, cid, shown); } }));
+    if (syncOn && !pSynced) { pSynced = true; doSync(); }
     onAll('[data-pc]', 'click', (e) => { const c = e.currentTarget.dataset.pc; parents(range, c === cid ? '' : c); });
     on('#pmore', 'click', () => { const y = window.scrollY; parents(range, cid, shown + 30); window.scrollTo(0, y); });
     on('#pclear', 'click', () => ask('まちがいの記録（この画面の一覧）を消しますか？\n学習の記録や復習の予定は消えません。', { ok: '消す' }).then((y) => { if (y) { store.log = []; save(); parents(range); } }));
@@ -1842,4 +1887,5 @@
   }
 
   home();
+  pushSheet(true); // 前回までに送れなかった分があれば、あらためて送る
 })();
