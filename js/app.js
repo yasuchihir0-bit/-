@@ -96,11 +96,14 @@
         if (!e || typeof e !== 'object' || !cats.has(e.cat) || !isDate(e.d) || typeof e.q !== 'string') return;
         const o = { d: e.d, t: /^\d{2}:\d{2}$/.test(e.t) ? e.t : '', cat: e.cat, q: str(e.q), ans: str(e.ans, 500), g: e.g === 'hard' ? 'hard' : 'ng', m: ['quiz', 'write', 'essay', 'card', 'kanji'].includes(e.m) ? e.m : 'quiz' };
         if (typeof e.given === 'string') o.given = str(e.given, 600);
+        if (Number.isInteger(e.n) && e.n >= 0) o.n = e.n;
+        if (Number.isInteger(e.b)) o.b = Math.max(-1, Math.min(5, e.b));
         if (typeof e.exp === 'string' && e.exp) o.exp = str(e.exp);
         if (typeof e.img === 'string' && e.img.length < 40000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(e.img)) o.img = e.img;
         out.log.push(o);
       });
     }
+    out.seq = int(d.seq, 1e9);
     out.sessions = int(d.sessions);
     if ([10, 20, 30, 50].includes(+d.goal)) out.goal = +d.goal;
     if (d.answerMode === 'choice') out.answerMode = 'choice';
@@ -131,7 +134,8 @@
    * given: 答えた内容（null は「わからない」）。img: 手書きの画像（新しい IMG_KEEP 件だけ残す） */
   function logMiss(q, g, m, given, img) {
     const now = new Date();
-    const e = { d: today(), t: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`, cat: q.cat, q: String(q.q).slice(0, 2000), ans: String(q.ans).slice(0, 500), g, m };
+    if (!Number.isInteger(store.seq)) store.seq = 0;
+    const e = { n: store.seq++, d: today(), t: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`, cat: q.cat, q: String(q.q).slice(0, 2000), ans: String(q.ans).slice(0, 500), g, m };
     if (given != null) e.given = String(given).slice(0, 600);
     if (q.exp && !BANK.has(`${K.id}|${q.q}|${q.ans}`)) e.exp = String(q.exp).slice(0, 2000);
     if (img) e.img = img;
@@ -160,6 +164,28 @@
       x.fillStyle = '#222'; x.fillRect(0, 0, c.width, c.height);
       const url = c.toDataURL('image/png');
       return url.length < 40000 ? url : null;
+    } catch (e) { return null; }
+  }
+
+  /* まちがいの記録に通し番号をつける（端末どうしの同期で、変わった部分だけ送るため） */
+  {
+    let seq = store.seq || 0;
+    (store.log || []).forEach((e) => { if (Number.isInteger(e.n)) seq = Math.max(seq, e.n + 1); });
+    (store.log || []).forEach((e) => { if (!Number.isInteger(e.n)) e.n = seq++; });
+    store.seq = seq;
+  }
+  const SYNC = (typeof window !== 'undefined' && window.TokaiSync) || null;
+  const SYNC_S = APP.key.replace(/^tokai-/, '').replace(/-v\d+$/, ''); // kokugo / shakai / rika
+  /* この端末の記録を claude.ai 側に保存する（公開ページで開いたときだけ。失敗しても何もしない） */
+  const pushSync = () => { if (SYNC && SYNC.available()) { try { SYNC.upload(SYNC_S).catch(() => {}); } catch (e) { /* noop */ } } };
+  /* ほかの端末から読みこんだ記録（sync.js が置いたもの） */
+  function remoteData() {
+    if (!SYNC) return null;
+    try {
+      const r = JSON.parse(localStorage.getItem(SYNC.remoteKey(SYNC_S)));
+      if (!r || !Array.isArray(r.log)) return null;
+      const c = sanitize({ log: r.log, days: r.days });
+      return { log: c.log, days: c.days, at: typeof r.at === 'string' ? r.at.slice(0, 30) : '', devs: +r.devs || 1 };
     } catch (e) { return null; }
   }
 
@@ -1094,6 +1120,7 @@
   function result() {
     clearInterval(timerId);
     session.done = true;
+    pushSync();
     setKeys(null);
     const rs = session.results;
     const ok = rs.filter((r) => r.ok).length;
@@ -1204,6 +1231,7 @@
 
   function flashResult() {
     session.done = true;
+    pushSync();
     setKeys(null);
     const rs = session.results;
     const cnt = (g) => rs.filter((r) => r.g === g).length;
@@ -1477,6 +1505,7 @@
 
   function kanjiResult() {
     session.done = true;
+    pushSync();
     setKeys(null);
     const rs = session.results;
     const cnt = (g) => rs.filter((r) => r.g === g).length;
@@ -1507,21 +1536,28 @@
   /* ───────── 保護者画面：まちがえた問題と、答えた内容 ───────── */
   const P_RANGES = { today: ['今日', 0], week: ['7 日間', 6], month: ['30 日間', 29], all: ['すべて', null] };
   const P_MODE = { quiz: 'クイズ', write: '書き取り', essay: '記述', card: '暗記カード', kanji: '漢字で書く' };
+  let pSrc = null;      // 'local'（この端末）/ 'remote'（ほかの端末）
+  let pSyncMsg = '';    // 同期の結果のお知らせ
+  let pSynced = false;  // この画面を開いてから、自動の同期をしたか
   function parents(range = 'week', cid = '', shown = 30) {
     reset();
     const T = today();
+    const remote = remoteData();
+    // 記録のない端末（保護者の端末）では、ほかの端末の記録を先に見せる
+    const isRemote = !!remote && (pSrc || ((store.log || []).length ? 'local' : 'remote')) === 'remote';
+    const DATA = isRemote ? remote : { log: store.log || [], days: store.days };
     const from = P_RANGES[range][1] == null ? '' : addDays(T, -P_RANGES[range][1]);
-    const inRange = (store.log || []).filter((e) => e.d >= from && catOf(K.id, e.cat));
+    const inRange = DATA.log.filter((e) => e.d >= from && catOf(K.id, e.cat));
     const list = inRange.filter((e) => !cid || e.cat === cid).slice().reverse();
     // 期間内の学習量
-    const dsum = Object.entries(store.days).filter(([d]) => d >= from).reduce((a, [, v]) => ({ n: a.n + v.n, ok: a.ok + v.ok, cards: a.cards + (v.cards || 0) }), { n: 0, ok: 0, cards: 0 });
+    const dsum = Object.entries(DATA.days).filter(([d]) => d >= from).reduce((a, [, v]) => ({ n: a.n + v.n, ok: a.ok + v.ok, cards: a.cards + (v.cards || 0) }), { n: 0, ok: 0, cards: 0 });
     const byCat = {};
     inRange.forEach((e) => { byCat[e.cat] = (byCat[e.cat] || 0) + 1; });
     const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
     const maxC = catRows.length ? catRows[0][1] : 1;
     // 同じ問題を何回まちがえたか（記録に残っている分）
     const times = {};
-    (store.log || []).forEach((e) => { const k = `${e.q}|${e.ans}`; times[k] = (times[k] || 0) + 1; });
+    DATA.log.forEach((e) => { const k = `${e.q}|${e.ans}`; times[k] = (times[k] || 0) + 1; });
     const given = (e) => {
       if (e.img) return `<img class="p-img" src="${e.img}" alt="お子さんが書いた字">`;
       if (e.m === 'write' || e.m === 'kanji') return `<span class="small">（手書き。画像は新しい ${IMG_KEEP} 件だけ残ります）</span>`;
@@ -1533,7 +1569,7 @@
       : e.m === 'card' ? '× 思い出せなかった（自己採点）'
       : e.m === 'write' || e.m === 'kanji' || e.m === 'essay' ? '× 書けなかった（自己採点）' : '× まちがい');
     const now = (e) => {
-      const c = e.m === 'kanji' ? store.kanji[e.ans] : store.cards[`${K.id}|${e.q}|${e.ans}`];
+      const c = isRemote ? (Number.isInteger(e.b) && e.b >= 0 ? { box: e.b } : null) : e.m === 'kanji' ? store.kanji[e.ans] : store.cards[`${K.id}|${e.q}|${e.ans}`];
       if (!c) return '';
       return c.box >= 2 ? '<span class="p-now ok">その後、復習で正解</span>' : c.box === 1 ? '<span class="p-now">その後 1 回正解</span>' : '<span class="p-now ng">まだ復習中</span>';
     };
@@ -1556,6 +1592,16 @@
     h(`
       <h1>👪 保護者画面</h1>
       <p class="lead">${esc(K.name)}で、お子さんがまちがえた問題と、そのとき答えた内容です。新しいものから順に出ます。</p>
+      ${SYNC && SYNC.available() ? `<div class="card p-sync">
+        ${remote ? `<div class="seg" role="group" aria-label="どの端末の記録を見るか">
+          <button type="button" data-src="local" aria-pressed="${!isRemote}">この端末の記録</button>
+          <button type="button" data-src="remote" aria-pressed="${isRemote}">ほかの端末の記録</button>
+        </div>` : ''}
+        <p class="small" style="margin:${remote ? '8px' : '0'} 0 0">${isRemote
+          ? `ほかの端末（${remote.devs} 台）で解いた記録です。${remote.at ? `最後に送られた日時：${esc(remote.at.slice(5, 10).replace('-', '/'))} ${esc(remote.at.slice(11, 16))}（世界標準時）` : ''}`
+          : remote ? 'この端末で解いた記録です。' : 'お子さんの端末と同じ claude.ai アカウントでログインすると、お子さんの端末の記録がここに出ます。'}</p>
+        <p style="margin:8px 0 0"><button class="btn sub" id="psync" type="button">🔄 記録を更新する</button> <span class="small" id="psyncmsg">${esc(pSyncMsg)}</span></p>
+      </div>` : ''}
       <div class="row" style="margin-bottom:10px"><span class="small">期間</span>
         <div class="seg" role="group" aria-label="期間">${Object.entries(P_RANGES).map(([k, v]) => `<button type="button" data-r="${k}" aria-pressed="${k === range}">${v[0]}</button>`).join('')}</div></div>
       <div class="kpis big">
@@ -1571,19 +1617,32 @@
       <div class="card">
         <strong>まちがえた問題${cid ? `（${esc(catOf(K.id, cid).name)}）` : ''}：${list.length} 件</strong>
         ${list.length ? `<ul class="p-list">${items}</ul>${list.length > shown ? `<button class="btn sub wide" id="pmore" type="button">さらに表示（残り ${list.length - shown} 件）</button>` : ''}`
-          : `<p class="small" style="margin:8px 0 0">${(store.log || []).length ? 'この期間・分野には、まちがいの記録がありません。' : 'まだ記録がありません。この画面ができたあとに解いた問題から記録されます。'}</p>`}
+          : `<p class="small" style="margin:8px 0 0">${DATA.log.length ? 'この期間・分野には、まちがいの記録がありません。' : 'まだ記録がありません。この画面ができたあとに解いた問題から記録されます。'}</p>`}
       </div>
       <div class="card">
         <strong>この画面について</strong>
         <ul class="steps small" style="padding-left:1.2em;margin-top:6px">
           <li>クイズは、えらんだ選択肢や入力した答えをそのまま表示します。</li>
           <li>手書き（書き取り・漢字で書く）は、書いた字の画像を新しい ${IMG_KEEP} 件まで残します。記述・手書き・暗記カードは、お子さん自身がつけた ○・△・× です。</li>
-          <li>記録は新しい ${LOG_MAX} 件まで、この端末のブラウザにだけ保存されます。${APP.links.length ? 'ほかの教科は、それぞれの教科の保護者画面で見られます。' : ''}</li>
+          <li>記録は新しい ${LOG_MAX} 件まで、この端末のブラウザに保存されます。公開ページを claude.ai にログインして開いているときは、新しい 600 件（手書きの画像は 40 件）が、同じアカウントの別の端末からも見られます。${APP.links.length ? 'ほかの教科は、それぞれの教科の保護者画面で見られます。' : ''}</li>
         </ul>
         ${APP.links.length ? `<p class="small" style="margin:6px 0 0">ほかの教科：${APP.links.map((l) => `<a class="linkbtn" href="${esc(l.href)}">${esc(l.label)}</a>`).join('・')}</p>` : ''}
-        ${(store.log || []).length ? '<p style="margin:10px 0 0"><button class="btn ghost" id="pclear" type="button">まちがいの記録を消す</button></p>' : ''}
+        ${!isRemote && (store.log || []).length ? '<p style="margin:10px 0 0"><button class="btn ghost" id="pclear" type="button">この端末のまちがいの記録を消す</button></p>' : ''}
       </div>`);
     onAll('[data-r]', 'click', (e) => parents(e.currentTarget.dataset.r, cid));
+    onAll('[data-src]', 'click', (e) => { pSrc = e.currentTarget.dataset.src; parents(range); });
+    const doSync = () => {
+      const msg = $app.querySelector('#psyncmsg'), btn = $app.querySelector('#psync');
+      if (!btn) return;
+      btn.disabled = true; if (msg) msg.textContent = '更新しています…';
+      const mine = session; // 画面が変わっていたら、かきかえない
+      SYNC.sync().then((r) => {
+        pSyncMsg = r.err ? SYNC.message(r) : `更新しました（ほかの端末の記録 ${(r.counts && r.counts[SYNC_S]) || 0} 件）`;
+        if (session === mine && $app.querySelector('#psync')) parents(range, cid, shown);
+      }, () => { pSyncMsg = '同期できませんでした。'; if (session === mine && $app.querySelector('#psync')) parents(range, cid, shown); });
+    };
+    on('#psync', 'click', doSync);
+    if (SYNC && SYNC.available() && !pSynced) { pSynced = true; doSync(); }
     onAll('[data-pc]', 'click', (e) => { const c = e.currentTarget.dataset.pc; parents(range, c === cid ? '' : c); });
     on('#pmore', 'click', () => { const y = window.scrollY; parents(range, cid, shown + 30); window.scrollTo(0, y); });
     on('#pclear', 'click', () => ask('まちがいの記録（この画面の一覧）を消しますか？\n学習の記録や復習の予定は消えません。', { ok: '消す' }).then((y) => { if (y) { store.log = []; save(); parents(range); } }));

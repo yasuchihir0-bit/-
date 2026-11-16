@@ -386,3 +386,5 @@ textarea.essay {
 button.p-cat { width: 100%; background: none; border: 0; border-radius: 8px; text-align: left; font-size: 15px; padding: 6px 4px; }
 button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 700; }
 .ask-text { white-space: pre-line; }
+.p-sync .seg { display: flex; width: 100%; }
+.p-sync .btn { min-height: 44px; padding: 8px 14px; }
