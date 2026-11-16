@@ -12,6 +12,8 @@
   const MIN_SECRET = 12;
   const MIN_VER = 1;  // 受け口（Code.gs）の版番号が、これより古いときは、新しくしてもらう
   const LABEL_KEY = 'tokai-sheet-label';
+  const PAIR_KEY = 'tokai-sheet-pair';    // 保護者の端末だけ：受け口のアドレスと 2 つの合言葉（ほかの端末の設定リンクを作るため）
+  const DRAFT_KEY = 'tokai-sheet-draft';  // 受け口づくりの案内のとちゅう
   const BATCH = 150, MAX_BATCHES = 6, TIMEOUT = 25000, DAYS_SENT = 30;
   const remoteKey = (s) => `tokai-${s}-remote`;
 
@@ -63,7 +65,7 @@
     c.can = { ...(c.can || {}), ...patch };
     ls.set(CFG_KEY, JSON.stringify(c));
   }
-  function clearConfig() { ls.del(CFG_KEY); ls.del(ST_KEY); }
+  function clearConfig() { [CFG_KEY, ST_KEY, PAIR_KEY, DRAFT_KEY].forEach((k) => ls.del(k)); } // 合言葉をこの端末に残さない
 
   async function post(url, payload, noCors) {
     const ctl = typeof AbortController === 'function' ? new AbortController() : null;
@@ -193,5 +195,80 @@
     return { configured: !!c, url: c ? c.url : '', can: c ? c.can : { write: false, read: false }, label: getLabel(), pending, lastOk: st.lastOk, lastPull: st.lastPull || '', lastErr: st.lastErr, unconfirmed: !!st.unconfirmed };
   }
 
-  g.SheetSync = { setConfig, clearConfig, getLabel, setLabel, test, flush, flushSoon, pull, sync, status, MIN_SECRET, MIN_VER };
+  /* ───────── 受け口づくりの案内（保護者の端末） ───────── */
+  /* 読みまちがえにくい文字だけで、合言葉をつくる（0/O・1/l/I などは使わない） */
+  function makeSecret(n = 20) {
+    const A = 'abcdefghjkmnpqrstuvwxyz23456789';
+    const buf = new Uint32Array(n);
+    (g.crypto || {}).getRandomValues ? g.crypto.getRandomValues(buf) : buf.forEach((_, i) => { buf[i] = Math.floor(Math.random() * 2 ** 32); });
+    return Array.from(buf, (x) => A[x % A.length]).join('');
+  }
+  const SECRET_LINE = "const SECRET = 'ここを合言葉に書きかえる';";
+  const READ_LINE = "const READ_SECRET = '';";
+  /* Code.gs のひな形に、2 つの合言葉を書きこむ。ひな形の形がちがうときは null */
+  function buildCode(template, write, read) {
+    const t = String(template || '');
+    if (t.split(SECRET_LINE).length !== 2 || t.split(READ_LINE).length !== 2) return null;
+    if (!/^[a-z0-9]{12,40}$/.test(write) || !/^[a-z0-9]{12,40}$/.test(read) || write === read) return null;
+    return t.replace(SECRET_LINE, `const SECRET = '${write}';`).replace(READ_LINE, `const READ_SECRET = '${read}';`);
+  }
+  const getDraft = () => { const d = parse(ls.get(DRAFT_KEY)); return d && typeof d === 'object' ? d : null; };
+  const setDraft = (d) => (d ? ls.set(DRAFT_KEY, JSON.stringify(d)) : ls.del(DRAFT_KEY));
+  const getPair = () => {
+    const p = parse(ls.get(PAIR_KEY));
+    return p && URL_RE.test(p.url || '') && typeof p.write === 'string' && typeof p.read === 'string' ? { url: p.url, write: p.write, read: p.read } : null;
+  };
+  const setPair = (p) => (p ? ls.set(PAIR_KEY, JSON.stringify({ url: p.url, write: p.write, read: p.read })) : ls.del(PAIR_KEY));
+
+  /* できあがった受け口を、2 つの合言葉で確かめる（送る合言葉は「送るだけ」、見る合言葉は「見るだけ」になっているか） */
+  async function checkPair(url, write, read) {
+    url = String(url || '').trim();
+    if (!URL_RE.test(url)) return { err: 'url', message: 'アドレスの形がちがいます。「https://script.google.com/macros/s/…/exec」で終わるアドレスを貼りつけてください。' };
+    const w = await test(url, write);
+    if (!w.ok) return w;
+    if (w.unknown) return { ok: true, unknown: true, message: w.message };
+    const r = await test(url, read);
+    if (!r.ok) return r.err === 'secret' ? { err: 'mismatch', message: '見る合言葉が受け付けられませんでした。貼りつけたプログラムが、この画面でコピーしたものか確かめてください（コピーし直して、貼りつけ・保存・デプロイの更新をやり直します）。' } : r;
+    if (!(w.can && w.can.write && !w.can.read && r.can && r.can.read && !r.can.write)) return { err: 'mismatch', message: '合言葉の分け方が想定とちがいます。この画面でコピーしたプログラムを、そのまま貼りつけたか確かめてください。' };
+    return { ok: true, message: 'つながりました。送る合言葉・見る合言葉とも、正しく動いています。' };
+  }
+
+  /* ───────── 設定リンク（ほかの端末に、アドレス・合言葉・呼び名を渡す） ───────── */
+  const b64u = {
+    enc: (str) => btoa(String.fromCharCode(...new TextEncoder().encode(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+    dec: (s) => { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)); return new TextDecoder().decode(Uint8Array.from(b, (c) => c.charCodeAt(0))); },
+  };
+  /* role: 'child'（送る合言葉）／'parent'（見る合言葉） */
+  function makeLink(base, role, label) {
+    const p = getPair();
+    if (!p) return null;
+    const body = { v: 1, r: role, u: p.url, s: role === 'child' ? p.write : p.read };
+    const l = String(label || '').trim().slice(0, 20);
+    if (role === 'child' && l) body.l = l;
+    return `${String(base).split('#')[0]}#setup=${b64u.enc(JSON.stringify(body))}`;
+  }
+  /* location.hash から設定リンクの中身を取り出す。なければ null、形がおかしければ { err } */
+  function readLink(hash) {
+    const m = /^#setup=([A-Za-z0-9_-]{20,2000})$/.exec(String(hash || ''));
+    if (!m) return /^#setup=/.test(String(hash || '')) ? { err: 'リンクが途中で切れているか、形がちがいます。もう一度コピーして開いてください。' } : null;
+    let o;
+    try { o = JSON.parse(b64u.dec(m[1])); } catch (e) { return { err: 'リンクの中身が読めませんでした。もう一度コピーして開いてください。' }; }
+    if (!o || o.v !== 1 || !['child', 'parent'].includes(o.r) || !URL_RE.test(o.u || '') || typeof o.s !== 'string' || o.s.length < MIN_SECRET) return { err: 'このアプリの設定リンクではないようです。' };
+    return { role: o.r, url: o.u, secret: o.s, label: typeof o.l === 'string' ? o.l.slice(0, 20) : '' };
+  }
+  /* 設定リンクの内容を、この端末に入れる（受け口に確かめてから） */
+  async function applyLink(link) {
+    const t = await test(link.url, link.secret);
+    if (!t.ok) return t;
+    if (!t.unknown) {
+      if (link.role === 'child' && !(t.can && t.can.write)) return { err: 'role', message: 'このリンクの合言葉では、記録を送れません。保護者の端末で、お子さん用のリンクを作り直してください。' };
+      if (link.role === 'parent' && !(t.can && t.can.read)) return { err: 'role', message: 'このリンクの合言葉では、記録を見られません。保護者用のリンクを作り直してください。' };
+    }
+    setConfig(link.url, link.secret, t.can);
+    if (link.role === 'child') setLabel(link.label);
+    return { ok: true, message: t.unknown ? t.message : '' };
+  }
+
+  g.SheetSync = { setConfig, clearConfig, getLabel, setLabel, test, flush, flushSoon, pull, sync, status, MIN_SECRET, MIN_VER,
+    makeSecret, buildCode, getDraft, setDraft, getPair, setPair, checkPair, makeLink, readLink, applyLink, URL_RE };
 })(typeof window !== 'undefined' ? window : globalThis);

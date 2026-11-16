@@ -35,7 +35,7 @@
       pickDesc: '植物・天体・てこ・水よう液など、苦手な分野をクイズや暗記カードで集中練習。',
       topFocus: ['chikara', 'denki', 'tokekata', 'suiyoeki', 'kitai', 'tentai'],
       contentNote: '問題文・解説はこのアプリのために作ったものです。まちがいがないよう注意していますが、気になるところは学校・塾の教材や図鑑でも確かめてください。',
-      links: [{ href: 'index.html', label: '📖 国語トレーニング' }, { href: 'shakai.html', label: '🗾 社会トレーニング' }],
+      links: [{ href: 'kokugo.html', label: '📖 国語トレーニング' }, { href: 'shakai.html', label: '🗾 社会トレーニング' }],
     },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -9,7 +9,7 @@
 
 | ページ | 教科 | 内容 |
 | --- | --- | --- |
-| `index.html` | 📖 国語 | 長文読解（説明文・物語文）と、ことわざ・慣用句・文法・敬語などの知識（漢字は除く） |
+| `kokugo.html` | 📖 国語 | 長文読解（説明文・物語文）と、ことわざ・慣用句・文法・敬語などの知識（漢字は除く） |
 | `shakai.html` | 🗾 社会 | 地理・歴史・公民・時事（東海地方・年代の並べかえをふくむ） |
 | `rika.html` | 🔬 理科 | 生物・地学・物理・化学・実験（631 問・知識問題） |
 
@@ -76,7 +76,7 @@
 問題データは `js/data/rika.js`（分野の定義）と `seibutsu.js`・`chigaku.js`・`butsuri.js`・`kagaku.js`・`jissen.js`・`tsuika1.js`・`tsuika2.js`・`rika-moshi.js`（模試の出題テーマを参考にした問題）・`rika-jakuten.js`（苦手対策）にあります。（アプリ本体は `{ cat, lv, q, n: 正解の数, unit: '単位', exp }` の形の計算問題にも対応していますが、今は使っていません。）
 学習の記録は前の理科アプリと同じ形式なので、前のアプリで「記録を書き出す」→ こちらで「読みこむ」と、記録を引きつげます。
 
-# 📖 国語トレーニング（index.html）
+# 📖 国語トレーニング（kokugo.html）
 
 ## 東海中の傾向に合わせた工夫
 
@@ -198,8 +198,8 @@
 ## 開き方
 
 ```bash
-open start.html                 # 教科えらびの画面
-open index.html                 # 国語（そのまま開く）
+open index.html                 # 教科えらびの画面
+open kokugo.html                # 国語（そのまま開く）
 open shakai.html                # 社会
 open rika.html                  # 理科
 python3 -m http.server 8000     # 同じ Wi-Fi のスマホから開くとき
@@ -238,8 +238,8 @@ node tests/check.js   # 国語・社会・理科で、選択肢の重複・正�
 ### 保護者の端末で見る（Google 経由・お子さんのログインなし）
 
 お子さんの端末でまちがえた問題と答えた内容を、**お子さんがログインしなくても**、保護者の端末のアプリの保護者画面で見られます。
-アプリを claude.ai の外（Netlify などの無料の置き場所）に置き、保護者の Google アカウントに「受け口」（`tools/apps-script/Code.gs`）を作ります。
-**設定のしかたは [`tools/apps-script/SETUP.md`](tools/apps-script/SETUP.md)** を見てください（最初に 1 回だけ、20〜30 分ほど）。
+提供する人がアプリを 1 か所（https:// の置き場所）に置き（[`docs/DEPLOY.md`](docs/DEPLOY.md)）、各家庭は保護者画面の**案内つきの手順**で、保護者の Google アカウントに「受け口」（`tools/apps-script/Code.gs`）を作ります。お子さんの端末は、保護者の端末が作る**設定リンク（QR コード）**を開くだけです。
+**家庭の設定のしかたは [`tools/apps-script/SETUP.md`](tools/apps-script/SETUP.md)** を見てください（最初に 1 回だけ、10 分ほど）。
 仕様と、ほかの人も使えるようにするための方針は [`docs/SPEC.md`](docs/SPEC.md) にあります（受け口は家庭ごと。運営は記録を預かりません）。
 
 - 送受信のプログラムは `js/sheetsync.js`、受け口は `tools/apps-script/Code.gs` です。
@@ -263,21 +263,24 @@ claude.ai の公開ページで開いたときは、まちがいの記録が cla
 1. [VS Code](https://code.visualstudio.com/) をインストールします。
 2. ZIP を展開し、VS Code の「ファイル → フォルダーを開く」で、展開したフォルダーを開きます。
 3. 右下に「おすすめの拡張機能」が出たら **Live Server** を入れます（`.vscode/extensions.json` で指定済み）。
-4. `start.html` を右クリック →「Open with Live Server」。保存するたびにブラウザが自動で更新されます。
-   （Live Server なしでも、`start.html` をダブルクリックすれば開けます）
+4. `index.html` を右クリック →「Open with Live Server」。保存するたびにブラウザが自動で更新されます。
+   （Live Server なしでも、`index.html` をダブルクリックすれば開けます）
 
 ### どのファイルに何があるか
 
 | 内容 | ファイル |
 | --- | --- |
-| 教科えらびの画面 | `start.html` |
+| 教科えらびの画面 | `index.html` |
 | 国語の問題 | `js/data/kokugo.js` 〜 `kokugo4.js` |
 | 国語・長文読解 | `js/data/kokugo5.js`（本文と設問。`[[①|線を引く部分]]` で――線部、記述は `k`＝解答例・`pts`＝採点のポイント・`lim`＝字数） |
 | 社会の問題 | `js/data/shakai.js`（分野の一覧）、`shakai3.js` 〜 `shakai8.js`・`shakai-jakuten.js`（問題） |
 | 社会・年代の並べかえ | `js/data/shakai2.js` の `EVENTS`（`[年, できごと]`） |
 | 理科の問題 | `js/data/rika.js`（分野の一覧）、`seibutsu.js` `chigaku.js` `butsuri.js` `kagaku.js` `jissen.js` `tsuika1.js` `tsuika2.js` `rika-moshi.js` |
 | 画面の動き（全教科共通） | `js/app.js` |
-| 記録の同期（公開ページだけ） | `js/sync.js` |
+| 記録の同期（claude.ai の公開ページ） | `js/sync.js` |
+| 記録のやりとり（Google 経由）・受け口づくりの案内・設定リンク | `js/sheetsync.js`、受け口は `tools/apps-script/Code.gs` |
+| QR コードを作る部品（qrcode-generator 1.4.4、MIT ライセンス、Kazuhiko Arase） | `js/vendor/qrcode.js` |
+| 公開用のファイル一式を作る | `node tools/build.js site`（置き場所用、`dist/`）／ `node tools/build.js artifact <出力先>`（claude.ai 用） |
 | 見た目 | `css/style.css` |
 
 ### 問題の書き方（社会・理科）

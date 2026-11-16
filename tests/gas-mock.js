@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function makeEnv(secret, readSecret) {
+/* rawCode を渡すと、そのプログラムをそのまま動かす（保護者画面の案内がコピーさせたものを試すとき） */
+function makeEnv(secret, readSecret, rawCode) {
   const sheets = {};
   const formats = [];
   const props = {};
@@ -33,7 +34,7 @@ function makeEnv(secret, readSecret) {
     console,
   };
   vm.createContext(ctx);
-  let code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script', 'Code.gs'), 'utf8');
+  let code = rawCode || fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script', 'Code.gs'), 'utf8');
   if (secret) code = code.replace("const SECRET = 'ここを合言葉に書きかえる';", `const SECRET = '${secret}';`);
   if (readSecret) code = code.replace("const READ_SECRET = '';", `const READ_SECRET = '${readSecret}';`);
   vm.runInContext(code, ctx);

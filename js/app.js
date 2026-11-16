@@ -1562,18 +1562,198 @@
     const role = !st.configured ? '' : st.can.write && st.can.read ? 'この端末は、記録を送ることも見ることもできます。' : st.can.write ? 'この端末は、記録を送る専用です（見るには、保護者の端末で設定します）。' : 'この端末は、記録を見る専用です。';
     const line = !st.configured ? 'まだ設定されていません。'
       : `${st.lastOk ? `この端末から最後に送った日時：${atText(st.lastOk)}` : 'この端末からは、まだ送っていません'}${st.pending ? `／まだ送っていない記録 ${st.pending} 件` : ''}${st.unconfirmed ? '／返事が読めない環境のため、届いたかは確認できません（スプレッドシートで確かめてください）' : ''}${st.lastErr ? `／${esc(st.lastErr)}` : ''}`;
+    const pair = SHEET.getPair();
+    const draft = SHEET.getDraft();
     return `<div class="card p-sheet">
       <strong>📨 お子さんの端末と記録をやりとりする</strong>
-      <p class="small" style="margin:6px 0 8px">お子さんの端末でまちがえた問題と答えた内容を、保護者の Google アカウント経由で、保護者の端末のこの画面で見られます。お子さんのログインはいりません。<b>お子さんの端末と保護者の端末の両方で</b>、受け口のアドレスと合言葉を、一度だけ設定します（お子さんの端末には「送る合言葉」、保護者の端末には「見る合言葉」。分けていなければ同じ合言葉です）。送られるのは、まちがえた問題・正解・答えた内容・日付・呼び名だけです。設定のしかたは tools/apps-script/SETUP.md を見てください。</p>
+      <p class="small" style="margin:6px 0 8px">お子さんの端末でまちがえた問題と答えた内容を、保護者の Google アカウント経由で、保護者の端末のこの画面で見られます。お子さんのログインはいりません。送られるのは、まちがえた問題・正解・答えた内容・日付・呼び名だけです。</p>
       <p class="small" id="shst" style="margin:0 0 8px">${st.configured ? `設定ずみ。${role}` : ''}${line}</p>
-      <label class="small" for="shlabel">この端末を使うお子さんの呼び名（保護者画面に出ます。例：たろう）</label>
-      <input id="shlabel" class="p-field" type="text" maxlength="20" autocomplete="off" placeholder="空でもかまいません" value="${esc(st.label)}">
-      <label class="small" for="shurl">受け口のアドレス</label>
-      <input id="shurl" class="p-field" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(st.url)}">
-      <label class="small" for="shsec">合言葉（お子さんの端末：記録を送る合言葉／保護者の端末：記録を見る合言葉）</label>
-      <input id="shsec" class="p-field" type="password" autocomplete="off" placeholder="${st.configured ? '（設定ずみ。かえるときだけ入れ直す）' : '12 文字以上'}">
-      <p style="margin:8px 0 0"><button class="btn sub" id="shsave" type="button">保存してためす</button>${st.configured ? ' <button class="btn ghost" id="shoff" type="button">送信をやめる</button>' : ''} <span class="small" id="shmsg">${esc(pSheetMsg)}</span></p>
+      ${!st.configured ? `<p style="margin:0 0 6px"><button class="btn" data-wiz="new" type="button">🛠 受け口をつくる（案内つき・10 分ほど）</button></p>
+        <p class="small" style="margin:0 0 8px">${draft ? 'とちゅうから続けられます。' : '保護者の端末で始めてください。'}お子さんの端末は、最後にできる「設定リンク」を開くだけで設定できます。</p>` : ''}
+      ${pair ? `<div class="row" style="margin:0 0 8px">
+        <button class="btn sub" data-links="child" type="button">📱 お子さんの端末を追加（リンク・QR）</button>
+        <button class="btn sub" data-links="parent" type="button">👪 保護者の端末を追加</button>
+        <button class="btn ghost" data-wiz="update" type="button">🔧 受け口を新しくする</button>
+      </div>` : ''}
+      <details class="p-manual">
+        <summary class="small">アドレスと合言葉を直接入れる${st.configured ? '・呼び名をかえる・送信をやめる' : ''}</summary>
+        <label class="small" for="shlabel">この端末を使うお子さんの呼び名（保護者画面に出ます。例：たろう）</label>
+        <input id="shlabel" class="p-field" type="text" maxlength="20" autocomplete="off" placeholder="空でもかまいません" value="${esc(st.label)}">
+        <label class="small" for="shurl">受け口のアドレス</label>
+        <input id="shurl" class="p-field" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(st.url)}">
+        <label class="small" for="shsec">合言葉（お子さんの端末：記録を送る合言葉／保護者の端末：記録を見る合言葉）</label>
+        <input id="shsec" class="p-field" type="password" autocomplete="off" placeholder="${st.configured ? '（設定ずみ。かえるときだけ入れ直す）' : '12 文字以上'}">
+        <p style="margin:8px 0 0"><button class="btn sub" id="shsave" type="button">保存してためす</button>${st.configured ? ' <button class="btn ghost" id="shoff" type="button">送信をやめる</button>' : ''}</p>
+      </details>
+      <p class="small" id="shmsg" style="margin:6px 0 0">${esc(pSheetMsg)}</p>
     </div>`;
+  }
+
+  /* ───────── 受け口づくりの案内（保護者の端末で、1 回だけ） ─────────
+   * new：1 準備 → 2 スプレッドシート → 3 プログラムを貼る → 4 公開 → 5 アドレスを貼って確かめる → 端末を追加
+   * update：3 新しいプログラムを貼る → 4 デプロイを更新 → 5 確かめる */
+  let codeTpl = null;
+  const loadCode = () => (codeTpl ? Promise.resolve(codeTpl) : fetch('tools/apps-script/Code.gs', { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.text(); }).then((t) => (codeTpl = t)));
+  async function copyText(text, area, msgEl) {
+    try { await navigator.clipboard.writeText(text); if (msgEl) msgEl.textContent = 'コピーしました。'; }
+    catch (e) { if (area) { area.focus(); area.select(); } if (msgEl) msgEl.textContent = 'コピーできませんでした。選ばれた文字を、長押し（右クリック）でコピーしてください。'; }
+  }
+  function sheetWizard(step = 1, mode = 'new') {
+    reset();
+    let d;
+    if (mode === 'update') {
+      const p = SHEET.getPair();
+      if (!p) { parents(); return; }
+      d = { write: p.write, read: p.read, url: p.url };
+      if (step < 3) step = 3;
+    } else {
+      d = SHEET.getDraft();
+      if (!d || !d.write || !d.read) d = { write: SHEET.makeSecret(), read: SHEET.makeSecret(), url: '' };
+      d = { ...d, step };
+      SHEET.setDraft(d); // とちゅうでやめても、ここから続けられる
+    }
+    const N = 5;
+    const nav = (back, next, nextLabel = '次へ') => `<div class="row" style="justify-content:space-between;margin-top:14px">
+      <span class="row">${back ? `<button class="btn ghost" data-go="${back}" type="button">戻る</button>` : ''}<button class="btn ghost" id="wzquit" type="button">${mode === 'update' ? 'やめる' : 'あとで続ける'}</button></span>
+      ${next ? `<button class="btn" data-go="${next}" type="button">${nextLabel}</button>` : ''}</div>`;
+    const head = (title) => `<h1>${mode === 'update' ? '🔧 受け口を新しくする' : '🛠 受け口をつくる'}</h1>
+      <div class="qhead"><span>${esc(title)}</span><span>${step} / ${N}</span></div>
+      <div class="progress"><i style="width:${(step / N) * 100}%"></i></div>`;
+    let body = '';
+    if (step === 1) {
+      body = `${head('はじめる前に')}<div class="card wz">
+        <p>お子さんの記録を受け取る「受け口」を、<b>保護者の Google アカウント</b>の中に作ります。アプリの提供者は、記録を受け取りません。</p>
+        <ul class="steps">
+          <li>いるもの：保護者の Google アカウント</li>
+          <li><b>パソコンかタブレット</b>がおすすめです（スマホでもできますが、Google の画面が小さく、操作しにくいです）。</li>
+          <li>合言葉は、この画面が自動で作ります。考える必要はありません。</li>
+          <li>とちゅうでやめても、この端末で続きから再開できます。</li>
+        </ul>
+        ${location.protocol !== 'https:' ? '<p class="small p-warn">いまは、アプリを置き場所ではない場所（ファイルを直接など）で開いています。最後にできる「設定リンク」は、置き場所（https:// で始まるアドレス）で開いたアプリで作ってください。</p>' : ''}
+        ${nav(0, 2, 'はじめる')}</div>`;
+    } else if (step === 2) {
+      body = `${head('スプレッドシートを作る')}<div class="card wz">
+        <ol class="steps">
+          <li>下のボタンで、新しい Google スプレッドシートを開きます（別のタブで開きます）。<br><a class="btn sub" href="https://sheets.new" target="_blank" rel="noopener">新しいスプレッドシートを開く</a></li>
+          <li>左上の「無題のスプレッドシート」を押して、名前を <b>東海中 まちがい記録</b> などにします。</li>
+          <li>メニューの <b>拡張機能 → Apps Script</b> を押します。プログラムを書く画面が、また別のタブで開きます。</li>
+        </ol>
+        <p class="small">開けたら、この画面にもどって「次へ」を押します。</p>
+        ${nav(1, 3)}</div>`;
+    } else if (step === 3) {
+      body = `${head(mode === 'update' ? '新しいプログラムを貼りつける' : 'プログラムを貼りつける')}<div class="card wz">
+        <ol class="steps">
+          <li>「コピー」を押します。${mode === 'update' ? 'いまと同じ合言葉が入った、新しいプログラムです。' : 'この端末で作った<b>合言葉が 2 つ入ったプログラム</b>です。'}</li>
+          <li>Apps Script の画面で、${mode === 'update' ? 'いまあるプログラム' : '最初から入っている文字（<code>function myFunction() {…}</code>）'}を<b>すべて消して</b>、貼りつけます。</li>
+          <li>💾（プロジェクトを保存）を押します。</li>
+        </ol>
+        <textarea id="wzcode" class="datatext" rows="8" readonly aria-label="受け口のプログラム">読みこんでいます…</textarea>
+        <p style="margin:8px 0 0"><button class="btn" id="wzcopy" type="button" disabled>コピー</button> <span class="small" id="wzmsg"></span></p>
+        <p class="small p-warn">このプログラムには合言葉が入っています。ほかの人に見せたり、送ったりしないでください。</p>
+        ${nav(mode === 'update' ? 0 : 2, 4)}</div>`;
+    } else if (step === 4) {
+      body = mode === 'update' ? `${head('デプロイを更新する')}<div class="card wz">
+        <ol class="steps">
+          <li>Apps Script の画面の右上の <b>デプロイ → デプロイを管理</b> を押します。</li>
+          <li>いまのデプロイを選び、<b>✏️（編集）</b>を押します。</li>
+          <li><b>バージョン</b>を <b>「新バージョン」</b> にして、<b>デプロイ</b> を押します。</li>
+        </ol>
+        <p class="small">アドレス（…/exec）は変わりません。お子さんの端末の設定も、そのままで使えます。</p>
+        ${nav(3, 5)}</div>` : `${head('ウェブアプリとして公開する')}<div class="card wz">
+        <ol class="steps">
+          <li>Apps Script の画面の右上の <b>デプロイ → 新しいデプロイ</b> を押します。</li>
+          <li>「種類の選択」の ⚙（歯車）を押して、<b>ウェブアプリ</b> を選びます。</li>
+          <li><b>次のユーザーとして実行</b>：<b>自分</b>　／　<b>アクセスできるユーザー</b>：<b>全員</b> にします。<br><span class="small">お子さんの端末は Google にログインしないので「全員」にします。合言葉がないと、書くことも読むこともできません。</span></li>
+          <li><b>デプロイ</b> を押します。</li>
+          <li>「アクセスを承認」を押し、自分のアカウントを選びます。<br>「Google ではこのアプリを確認していません」と出たら、<b>詳細 → （プロジェクト名）に移動</b> → <b>許可</b> で進みます。<br><span class="small">自分で貼りつけたプログラムなので、このとおりで大丈夫です。このプログラムが触れるのは、このスプレッドシートだけです。</span></li>
+          <li>最後に出る <b>ウェブアプリの URL</b>（…/exec で終わるもの）の「コピー」を押します。</li>
+        </ol>
+        ${nav(3, 5)}</div>`;
+    } else {
+      body = `${head('アドレスを貼りつけて確かめる')}<div class="card wz">
+        <label class="small" for="wzurl">ウェブアプリの URL（https://script.google.com/macros/s/…/exec）</label>
+        <input id="wzurl" class="p-field" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(d.url || '')}" placeholder="ここに貼りつける">
+        <p style="margin:10px 0 0"><button class="btn" id="wzcheck" type="button">つながるか確かめる</button></p>
+        <p class="small" id="wzmsg" style="margin:8px 0 0"></p>
+        ${nav(4, 0)}</div>`;
+    }
+    h(body);
+    onAll('[data-go]', 'click', (e) => sheetWizard(+e.currentTarget.dataset.go, mode));
+    on('#wzquit', 'click', () => parents());
+    if (step === 3) {
+      const area = $app.querySelector('#wzcode'), btn = $app.querySelector('#wzcopy'), msg = $app.querySelector('#wzmsg');
+      loadCode().then((tpl) => {
+        const code = SHEET.buildCode(tpl, d.write, d.read);
+        if (!code) { area.value = ''; msg.textContent = 'プログラムのひな形の形がちがうため、合言葉を書きこめませんでした。'; return; }
+        area.value = code; btn.disabled = false;
+        btn.addEventListener('click', () => copyText(code, area, msg));
+      }, () => { area.value = ''; msg.textContent = 'プログラムのファイル（tools/apps-script/Code.gs）を読みこめませんでした。アプリを置き場所に置いて、そこから開いているか確かめてください。'; });
+    }
+    if (step === 5) {
+      const input = $app.querySelector('#wzurl'), msg = $app.querySelector('#wzmsg'), btn = $app.querySelector('#wzcheck');
+      input.addEventListener('input', () => { if (mode !== 'update') { d = { ...d, url: input.value.trim() }; SHEET.setDraft(d); } });
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; msg.textContent = '確かめています…';
+        const url = input.value.trim();
+        const r = await SHEET.checkPair(url, d.write, d.read);
+        btn.disabled = false;
+        msg.textContent = r.message;
+        if (!r.ok) return;
+        SHEET.setPair({ url, write: d.write, read: d.read });
+        SHEET.setConfig(url, d.read, { write: false, read: true }); // 保護者の端末は「見る」だけ
+        if (mode !== 'update') SHEET.setDraft(null);
+        pSheetMsg = r.message; pSynced = false;
+        if (mode === 'update') { setTimeout(() => parents(), 900); return; }
+        setTimeout(() => sheetLinks('child', true), 900);
+      });
+    }
+  }
+
+  /* ───────── 設定リンク（お子さんの端末・保護者の端末を追加する） ───────── */
+  function sheetLinks(role = 'child', fresh = false) {
+    reset();
+    const pair = SHEET.getPair();
+    if (!pair) { parents(); return; }
+    const base = new URL('index.html', location.href).href;
+    h(`<h1>${role === 'child' ? '📱 お子さんの端末を追加する' : '👪 保護者の端末を追加する'}</h1>
+      ${fresh ? '<p class="lead">受け口ができました。この端末（保護者の端末）は、もう記録を見られます。次に、お子さんの端末を設定します。</p>' : ''}
+      <div class="seg" role="group" aria-label="どの端末を追加するか" style="margin-bottom:12px">
+        <button type="button" data-role="child" aria-pressed="${role === 'child'}">お子さんの端末</button>
+        <button type="button" data-role="parent" aria-pressed="${role === 'parent'}">保護者の端末</button>
+      </div>
+      <div class="card wz">
+        ${role === 'child' ? `<label class="small" for="lklabel">お子さんの呼び名（保護者画面に出ます。本名でなくてかまいません）</label>
+          <input id="lklabel" class="p-field" type="text" maxlength="20" autocomplete="off" placeholder="例：たろう">
+          <p style="margin:10px 0 0"><button class="btn" id="lkmake" type="button">設定リンクを作る</button></p>` : '<p class="small">もう 1 台の保護者の端末（もう一人の保護者のスマホなど）で、記録を見られるようにするリンクです。</p>'}
+        <div id="lkout" ${role === 'child' ? 'hidden' : ''}>
+          <ol class="steps">
+            <li>下のリンクを${role === 'child' ? 'お子さんの端末' : 'その端末'}に送ります（LINE・メールなど）。または、${role === 'child' ? 'お子さんの端末' : 'その端末'}のカメラで QR コードを読みとります。</li>
+            <li>${role === 'child' ? 'お子さんの端末' : 'その端末'}でリンクを開き、「この端末に設定する」を押します。</li>
+          </ol>
+          <input id="lklink" class="p-field" type="text" readonly aria-label="設定リンク">
+          <p style="margin:8px 0 0"><button class="btn sub" id="lkcopy" type="button">リンクをコピー</button> <span class="small" id="lkmsg"></span></p>
+          <div class="qrbox" id="lkqr"></div>
+          <p class="small p-warn">このリンクには${role === 'child' ? '「記録を送る合言葉」' : '「記録を見る合言葉」'}が入っています。${role === 'child' ? 'お子さんの端末' : 'その端末'}にだけ送り、SNS などには載せないでください。</p>
+          ${location.protocol !== 'https:' ? '<p class="small p-warn">いまのアプリは https:// で始まるアドレスで開かれていないため、このリンクはほかの端末では開けません。置き場所のアプリから作り直してください。</p>' : ''}
+        </div>
+      </div>
+      <p><button class="btn ghost" id="lkback" type="button">保護者画面にもどる</button></p>`);
+    const show = (label) => {
+      const link = SHEET.makeLink(base, role, label);
+      const out = $app.querySelector('#lkout'), input = $app.querySelector('#lklink'), qrEl = $app.querySelector('#lkqr');
+      out.hidden = false; input.value = link;
+      qrEl.textContent = '';
+      try {
+        const qr = window.qrcode(0, 'M'); qr.addData(link); qr.make();
+        const img = document.createElement('img'); img.src = qr.createDataURL(4, 4); img.alt = '設定リンクの QR コード'; img.width = img.height = (qr.getModuleCount() + 8) * 4;
+        qrEl.appendChild(img);
+      } catch (e) { qrEl.textContent = 'QR コードを作れませんでした。リンクを送ってください。'; }
+      $app.querySelector('#lkcopy').onclick = () => copyText(link, input, $app.querySelector('#lkmsg'));
+    };
+    onAll('[data-role]', 'click', (e) => sheetLinks(e.currentTarget.dataset.role));
+    on('#lkback', 'click', () => parents());
+    on('#lkmake', 'click', () => show($app.querySelector('#lklabel').value));
+    if (role === 'parent') show('');
   }
   function parents(range = 'week', cid = '', shown = 30) {
     reset();
@@ -1697,6 +1877,7 @@
       let sec = $app.querySelector('#shsec').value.trim();
       if (!sec && SHEET.status(sheetOpt()).configured) sec = (() => { try { return JSON.parse(localStorage.getItem('tokai-sheet-cfg')).secret; } catch (e) { return ''; } })();
       const msg = $app.querySelector('#shmsg'), btn = $app.querySelector('#shsave');
+      if (!msg || !btn) return;
       btn.disabled = true; msg.textContent = 'ためしています…';
       const t = await SHEET.test(url, sec);
       SHEET.setLabel($app.querySelector('#shlabel').value);
@@ -1707,6 +1888,8 @@
       } else pSheetMsg = t.message;
       if ($app.querySelector('#shsave')) parents(range, cid, shown);
     });
+    onAll('[data-wiz]', 'click', (e) => { const m = e.currentTarget.dataset.wiz; const dr = SHEET.getDraft(); sheetWizard(m === 'update' ? 3 : (dr && dr.step) || 1, m); });
+    onAll('[data-links]', 'click', (e) => sheetLinks(e.currentTarget.dataset.links));
     on('#shoff', 'click', () => ask('スプレッドシートへの自動送信をやめますか？\nすでに送った記録は、スプレッドシートに残ります。', { ok: 'やめる' }).then((y) => { if (y) { SHEET.clearConfig(); pSheetMsg = '送信をやめました。'; parents(range, cid, shown); } }));
     if (syncOn && !pSynced) { pSynced = true; doSync(); }
     onAll('[data-pc]', 'click', (e) => { const c = e.currentTarget.dataset.pc; parents(range, c === cid ? '' : c); });

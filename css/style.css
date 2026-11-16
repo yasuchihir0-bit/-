@@ -53,6 +53,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -393,3 +394,10 @@ button.p-cat[aria-pressed="true"] { background: color-mix(in srgb, var(--accent)
 .p-field { display: block; width: 100%; font: inherit; font-size: 15px; padding: 10px 12px; margin-top: 2px; border-radius: 10px; border: 2px solid var(--line); background: var(--card); color: var(--text); }
 .p-field:focus { outline: none; border-color: var(--accent); }
 .p-kid { color: var(--accent); }
+.p-manual { margin-top: 6px; }
+.p-manual summary { cursor: pointer; color: var(--accent); padding: 4px 0; }
+.p-warn { color: var(--ng); }
+.wz .steps li { margin: 8px 0; }
+.wz code { font-size: 13px; overflow-wrap: anywhere; }
+.qrbox { margin: 12px 0 4px; }
+.qrbox img { display: block; background: #fff; padding: 8px; border-radius: 8px; image-rendering: pixelated; max-width: 100%; height: auto; }
