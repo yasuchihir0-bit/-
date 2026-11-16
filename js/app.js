@@ -1536,6 +1536,8 @@
   /* ───────── 保護者画面：まちがえた問題と、答えた内容 ───────── */
   const P_RANGES = { today: ['今日', 0], week: ['7 日間', 6], month: ['30 日間', 29], all: ['すべて', null] };
   const P_MODE = { quiz: 'クイズ', write: '書き取り', essay: '記述', card: '暗記カード', kanji: '漢字で書く' };
+  /* 送られた日時を、この端末の時刻で「11/16 21:45」の形にする */
+  const atText = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
   let pSrc = null;      // 'local'（この端末）/ 'remote'（ほかの端末）
   let pSyncMsg = '';    // 同期の結果のお知らせ
   let pSynced = false;  // この画面を開いてから、自動の同期をしたか
@@ -1598,7 +1600,7 @@
           <button type="button" data-src="remote" aria-pressed="${isRemote}">ほかの端末の記録</button>
         </div>` : ''}
         <p class="small" style="margin:${remote ? '8px' : '0'} 0 0">${isRemote
-          ? `ほかの端末（${remote.devs} 台）で解いた記録です。${remote.at ? `最後に送られた日時：${esc(remote.at.slice(5, 10).replace('-', '/'))} ${esc(remote.at.slice(11, 16))}（世界標準時）` : ''}`
+          ? `ほかの端末（${remote.devs} 台）で解いた記録です。${atText(remote.at) ? `最後に送られた日時：${atText(remote.at)}` : ''}`
           : remote ? 'この端末で解いた記録です。' : 'お子さんの端末と同じ claude.ai アカウントでログインすると、お子さんの端末の記録がここに出ます。'}</p>
         <p style="margin:8px 0 0"><button class="btn sub" id="psync" type="button">🔄 記録を更新する</button> <span class="small" id="psyncmsg">${esc(pSyncMsg)}</span></p>
       </div>` : ''}
