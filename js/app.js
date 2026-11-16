@@ -43,7 +43,7 @@
 
   /* ───────── 保存（この端末のブラウザ内のみ） ───────── */
   const KEY = APP.key;
-  const LOG_MAX = 400, IMG_KEEP = 30; // まちがいの記録の上限・手書き画像を残す件数
+  const LOG_MAX = 3000, IMG_KEEP = 100; // まちがいの記録の上限・手書き画像を残す件数
   const blank = () => ({ version: 2, stats: {}, cards: {}, kanji: {}, days: {}, lvs: {}, log: [], sessions: 0 });
   let store = blank();
   try {
@@ -111,8 +111,18 @@
   }
   const save = () => {
     try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {
-      // 容量がいっぱいのときは、手書きの画像を消してもう一度保存する
-      try { (store.log || []).forEach((x) => { delete x.img; }); localStorage.setItem(KEY, JSON.stringify(store)); } catch (e2) { /* noop */ }
+      // 容量がいっぱいのときは、手書きの画像を古いほうから半分ずつ消して、保存できるまでくり返す
+      for (let i = 0; i < 12; i++) {
+        const imgs = (store.log || []).filter((x) => x.img);
+        if (!imgs.length) break;
+        imgs.slice(0, Math.ceil(imgs.length / 2)).forEach((x) => { delete x.img; });
+        try { localStorage.setItem(KEY, JSON.stringify(store)); return; } catch (e2) { /* もう一度 */ }
+      }
+      // それでも入らないときは、まちがいの記録を古いほうから半分ずつ消す（学習の記録・復習の予定は残す）
+      for (let i = 0; i < 12 && (store.log || []).length; i++) {
+        store.log.splice(0, Math.ceil(store.log.length / 2));
+        try { localStorage.setItem(KEY, JSON.stringify(store)); return; } catch (e3) { /* もう一度 */ }
+      }
     }
   };
 
