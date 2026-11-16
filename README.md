@@ -280,7 +280,7 @@ claude.ai の公開ページで開いたときは、まちがいの記録が cla
 | 記録の同期（claude.ai の公開ページ） | `js/sync.js` |
 | 記録のやりとり（Google 経由）・受け口づくりの案内・設定リンク | `js/sheetsync.js`、受け口は `tools/apps-script/Code.gs` |
 | QR コードを作る部品（qrcode-generator 1.4.4、MIT ライセンス、Kazuhiko Arase） | `js/vendor/qrcode.js` |
-| 公開用のファイル一式を作る | `node tools/build.js site`（置き場所用、`dist/`）／ `node tools/build.js artifact <出力先>`（claude.ai 用） |
+| 公開用のファイル一式を作る | `node tools/build.js site`（置き場所用、`dist/`）／ `artifact <出力先>`（claude.ai 用）／ `worker <出力先>`（Cloudflare Workers 用。いまの公開先 https://tokai3.tokai-training.workers.dev/ はこれ） |
 | 見た目 | `css/style.css` |
 
 ### 問題の書き方（社会・理科）
