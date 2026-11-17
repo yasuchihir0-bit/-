@@ -54,6 +54,12 @@ for (const page of PAGES) {
       name = 'start.html';
     }
   }
+  // 中身が変わったら、ブラウザが前の js・css を使いつづけないよう、アドレスに版の印をつける
+  if (mode !== 'artifact') html = html.replace(/(src|href)="((?:js|css)\/[^"?]+\.(?:js|css))"/g, (m, attr, rel) => {
+    const f = path.join(ROOT, rel);
+    if (!fs.existsSync(f)) return m;
+    return `${attr}="${rel}?v=${require('crypto').createHash('sha1').update(fs.readFileSync(f)).digest('hex').slice(0, 8)}"`;
+  });
   fs.writeFileSync(path.join(out, name), html);
   written.push(name);
 }
