@@ -32,24 +32,99 @@
 
   async function api(act, extra) {
     const r = await S.parentCall(act, extra).catch(() => ({ ok: false, err: 'net' }));
+    if (r && Number.isInteger(r.ver) && typeof store !== 'undefined' && r.ver !== store.ver) { store.ver = r.ver; cacheSave(); } // 受け口が新しくなったら、次からまとめて取る
     if (r && r.ok && Number.isInteger(r.ver) && r.ver < S.MIN_VER) return { ok: false, err: 'old' };
     return r || { ok: false, err: 'fail' };
   }
-  /* 1 画面分をまとめて取る。新しい受け口（版 3）は 1 回で、古い受け口は同時に出して取る */
-  let receiverVer = 0, noMulti = false;
-  async function bundle(parts) {
-    const r = noMulti ? { ok: false, err: 'format' } : await S.parentCall('multi', { parts }).catch(() => ({ ok: false, err: 'net' }));
-    if (r && r.err === 'format') noMulti = true; // 古い受け口：この画面のあいだは、まとめて取るのをやめる
-    if (r && Number.isInteger(r.ver)) receiverVer = r.ver;
-    if (r && r.ok && Number.isInteger(r.ver) && r.ver < S.MIN_VER) return parts.map(() => ({ ok: false, err: 'old' }));
-    if (r && r.ok && Array.isArray(r.results)) return r.results;
-    if (r && r.err && r.err !== 'format') return parts.map(() => r);
-    return Promise.all(parts.map((p) => { const { act, ...rest } = p; return api(act, rest); }));
+  /* 読みこみと、とっておき
+   *   新しい受け口（版 3）：画面を開いたとき 1 回の問い合わせで、全部のタブの内容をまとめて取る。
+   *     タブの切りかえは、手元の内容を出すだけ（問い合わせなし）。
+   *   古い受け口：まとめて取れないので、開いたタブに要るものだけを同時に取る。
+   *   前に取った内容はこの端末のブラウザにとっておき、次に開いたときすぐに出す。 */
+  const CACHE_KEY = 'tokai-parent-cache2', FRESH_MS = 60000;
+  const store = (() => { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY)); return c && typeof c === 'object' && c.parts ? c : { parts: {}, ver: 0, ms: 0 }; } catch (e) { return { parts: {}, ver: 0, ms: 0 }; } })();
+  try { localStorage.removeItem('tokai-parent-cache'); } catch (e) { /* noop */ }
+  const cacheSave = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify(store)); } catch (e) { /* noop */ } };
+  const PART = {
+    kids: () => ({ act: 'kids' }),
+    summary: () => ({ act: 'summary', today: today(), kid }),
+    requests: () => ({ act: 'requests', status: 'all', kid }),
+    messages: () => ({ act: 'messages' }),
+    rewards: () => ({ act: 'rewards' }),
+    ledger: () => ({ act: 'ledger', limit: 50, kid }),
+  };
+  const ALL = Object.keys(PART);
+  const TAB_NEEDS = { look: [], req: ['requests'], msg: ['messages'], reward: ['rewards'], set: ['ledger'] };
+  const keyOf = (name) => (['summary', 'requests', 'ledger'].includes(name) ? `${name}|${kid}` : name);
+  const got = (name) => store.parts[keyOf(name)];
+  const needs = (tab) => ['kids', 'summary'].concat(TAB_NEEDS[tab]);
+  const canMulti = () => !store.ver || store.ver >= 3;
+  let loading = null;
+  async function load(names) {
+    const t0 = Date.now();
+    let res = null;
+    if (canMulti()) {
+      const all = ALL.map((n) => PART[n]());
+      const r = await S.parentCall('multi', { parts: all }).catch(() => ({ ok: false, err: 'net' }));
+      if (r && Number.isInteger(r.ver)) store.ver = r.ver;
+      if (r && r.ok && Array.isArray(r.results)) { names = ALL; res = r.results; } else if (r && r.err !== 'format') res = names.map(() => r);
+      else if (!store.ver || store.ver >= 3) store.ver = 2; // まとめて取れない古い受け口
+    }
+    if (!res) res = await Promise.all(names.map((n) => { const { act, ...rest } = PART[n](); return api(act, rest); }));
+    const bad = res.find((x) => !x || !x.ok) || (store.ver && store.ver < S.MIN_VER ? { ok: false, err: 'old' } : null);
+    if (bad) return bad;
+    const at = Date.now();
+    names.forEach((n, i) => { store.parts[keyOf(n)] = { at, r: res[i] }; });
+    store.ms = at - t0;
+    cacheSave();
+    return null;
   }
-  /* 前に見た内容を、すぐ出すためにとっておく（この端末のブラウザだけ） */
-  const CACHE_KEY = 'tokai-parent-cache';
-  const cache = (() => { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY)); return c && typeof c === 'object' ? c : {}; } catch (e) { return {}; } })();
-  const cacheSave = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (e) { /* noop */ } };
+
+  /* ───────── タブ ───────── */
+  const TABS = [['look', 'ようす'], ['req', '申請'], ['msg', '応援'], ['reward', 'ご褒美'], ['set', '設定']];
+  let current = '';
+  async function main(tab, fresh) {
+    tab = TAB_NEEDS[tab] ? tab : 'look';
+    const key = `${tab}|${kid}`;
+    current = key;
+    if (fresh) needs(tab).forEach((n) => { const c = got(n); if (c) c.at = 0; });
+    const have = needs(tab).every((n) => got(n));
+    const old = needs(tab).filter((n) => !got(n) || Date.now() - got(n).at > FRESH_MS);
+    if (have) render(tab, !!old.length);
+    else if (!$('#tab')) h('<p class="small">読みこんでいます…</p>');
+    else { $$('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab))); tabHtml('<p class="small">読みこんでいます…</p>'); }
+    if (!old.length) return;
+    if (!loading) loading = load(old).finally(() => { loading = null; });
+    const bad = await loading;
+    if (current !== key) return; // 待っている間に、ほかのタブに移った
+    if (bad) {
+      if (have) { const st = $('#p-stale'); if (st) st.hidden = true; alertBox(`更新できませんでした（前に読みこんだ内容です）。${errText(bad)}`); return; }
+      h(`<h1>👪 保護者の画面</h1><div class="card"><p class="p-err">${esc(errText(bad))}</p><button class="btn sub" id="retry" type="button">もう一度</button></div>`);
+      $('#retry').addEventListener('click', () => main(tab));
+      return;
+    }
+    if (!needs(tab).every((n) => got(n))) return main(tab); // 古い受け口で、ほかのタブの読みこみと重なったとき
+    render(tab, false);
+  }
+  function render(tab, stale) {
+    const kr = got('kids').r, sm = got('summary').r, tn = TAB_NEEDS[tab][0], tr = tn ? got(tn).r : null;
+    kids = kr.kids || [];
+    if (kid && !kids.some((k) => k.dev === kid)) { kid = ''; return main(tab); }
+    const at = Math.min(...needs(tab).map((n) => got(n).at || Date.now()));
+    h(`<nav class="p-tabs" role="tablist">${TABS.map(([id, name]) => `<button type="button" role="tab" data-tab="${id}" aria-selected="${id === tab}">${name}${id === 'req' && num(sm.pending) ? `<span class="p-count">${num(sm.pending)}</span>` : ''}</button>`).join('')}</nav>
+      ${kids.length > 1 ? `<div class="row" style="margin-bottom:10px"><span class="small">お子さん</span><div class="seg" role="group" aria-label="お子さん">
+        <button type="button" data-kid="" aria-pressed="${!kid}">ぜんいん</button>${kids.map((k) => `<button type="button" data-kid="${esc(k.dev)}" aria-pressed="${k.dev === kid}">${esc(k.label || `端末 ${k.dev.slice(0, 4)}`)}</button>`).join('')}</div></div>` : ''}
+      <p class="small p-stale" id="p-stale" ${stale ? '' : 'hidden'}>🔄 新しい内容を読みこんでいます…</p>
+      <div id="tab"></div><p class="small p-err" id="p-msg" role="alert"></p>
+      <p class="small center p-foot">${at ? `${fmtTime(new Date(at).toISOString())} の内容` : ''}${store.ms ? `・読みこみ ${(store.ms / 1000).toFixed(1)} 秒` : ''}${store.ver ? `・受け口 版 ${store.ver}` : ''}
+        <button class="btn sub" id="reload" type="button" style="margin-left:6px">🔄 最新にする</button></p>
+      ${store.ver && store.ver < 3 ? '<p class="small center">受け口を新しくすると、この画面がもっと速くなります（タブを切りかえるたびの読みこみがなくなります）。教科の「👪 保護者の方へ」→「🔧 受け口を新しくする」。</p>' : ''}`);
+    $$('[data-tab]').forEach((b) => b.addEventListener('click', () => main(b.dataset.tab)));
+    $$('[data-kid]').forEach((b) => b.addEventListener('click', () => { kid = b.dataset.kid; main(tab); }));
+    $('#reload').addEventListener('click', () => { Object.values(store.parts).forEach((c) => { c.at = 0; }); main(tab); });
+    const view = { look: () => look(sm), req: () => req(tr), msg: () => msg(tr), reward: () => reward(tr), set: () => set(tr) }[tab];
+    try { view(); } catch (e) { alertBox(ERR.net); }
+  }
   const errText = (r) => (r && r.err === 'old' ? '受け口（Code.gs）が古いようです。教科の「👪 保護者の方へ」→「🔧 受け口を新しくする」で新しくしてください。' : ERR[r && r.err] || 'うまくいきませんでした。');
   function alertBox(t) { const el = $('#p-msg'); if (el) el.textContent = t; }
 
@@ -84,52 +159,6 @@
     });
   }
 
-  /* ───────── タブ ───────── */
-  const TABS = [['look', 'ようす'], ['req', '申請'], ['msg', '応援'], ['reward', 'ご褒美'], ['set', '設定']];
-  const TAB_PARTS = {
-    look: () => [],
-    req: () => [{ act: 'requests', status: 'all', kid }],
-    msg: () => [{ act: 'messages' }],
-    reward: () => [{ act: 'rewards' }],
-    set: () => [{ act: 'ledger', limit: 50, kid }],
-  };
-  let current = '';
-  async function main(tab, fresh) {
-    tab = TAB_PARTS[tab] ? tab : 'look';
-    const key = `${tab}|${kid}`;
-    current = key;
-    if (fresh) delete cache[key];
-    if (cache[key]) render(tab, cache[key], true);
-    else if (!$('#tab')) h('<p class="small">読みこんでいます…</p>');
-    else { $$('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab))); tabHtml('<p class="small">読みこんでいます…</p>'); }
-    const res = await bundle([{ act: 'kids' }, { act: 'summary', today: today(), kid }].concat(TAB_PARTS[tab]()));
-    if (current !== key) return; // 待っている間に、ほかのタブに移った
-    const bad = res.find((x) => !x || !x.ok);
-    if (bad) {
-      if (cache[key]) { const st = $('#p-stale'); if (st) st.hidden = true; alertBox(`更新できませんでした（前に読みこんだ内容です）。${errText(bad)}`); return; }
-      h(`<h1>👪 保護者の画面</h1><div class="card"><p class="p-err">${esc(errText(bad))}</p><button class="btn sub" id="retry" type="button">もう一度</button></div>`);
-      $('#retry').addEventListener('click', () => main(tab));
-      return;
-    }
-    cache[key] = res;
-    cacheSave();
-    render(tab, res, false);
-  }
-  function render(tab, res, stale) {
-    const [kr, sm, tr] = res;
-    kids = kr.kids || [];
-    if (kid && !kids.some((k) => k.dev === kid)) kid = '';
-    h(`<nav class="p-tabs" role="tablist">${TABS.map(([id, name]) => `<button type="button" role="tab" data-tab="${id}" aria-selected="${id === tab}">${name}${id === 'req' && num(sm.pending) ? `<span class="p-count">${num(sm.pending)}</span>` : ''}</button>`).join('')}</nav>
-      ${kids.length > 1 ? `<div class="row" style="margin-bottom:10px"><span class="small">お子さん</span><div class="seg" role="group" aria-label="お子さん">
-        <button type="button" data-kid="" aria-pressed="${!kid}">ぜんいん</button>${kids.map((k) => `<button type="button" data-kid="${esc(k.dev)}" aria-pressed="${k.dev === kid}">${esc(k.label || `端末 ${k.dev.slice(0, 4)}`)}</button>`).join('')}</div></div>` : ''}
-      <p class="small p-stale" id="p-stale" ${stale ? '' : 'hidden'}>🔄 新しい内容を読みこんでいます…</p>
-      <div id="tab"></div><p class="small p-err" id="p-msg" role="alert"></p>
-      ${!stale && receiverVer && receiverVer < 3 ? '<p class="small center">受け口を新しくすると、この画面がもっと速くなります（教科の「👪 保護者の方へ」→「🔧 受け口を新しくする」）。</p>' : ''}`);
-    $$('[data-tab]').forEach((b) => b.addEventListener('click', () => main(b.dataset.tab)));
-    $$('[data-kid]').forEach((b) => b.addEventListener('click', () => { kid = b.dataset.kid; main(tab); }));
-    const view = { look: () => look(sm), req: () => req(tr), msg: () => msg(tr), reward: () => reward(tr), set: () => set(tr) }[tab];
-    try { view(); } catch (e) { alertBox(ERR.net); }
-  }
   const tabHtml = (html) => { $('#tab').innerHTML = html; };
 
   /* ようす */
@@ -289,7 +318,7 @@
     $$('[data-block]').forEach((b) => b.addEventListener('click', async () => {
       const d = await api('block', { kid: b.dataset.block, block: b.dataset.blocked !== '1' });
       if (!d.ok) alertBox(errText(d));
-      Object.keys(cache).forEach((k) => { delete cache[k]; });
+      Object.values(store.parts).forEach((c) => { c.at = 0; });
       main('set', true);
     }));
     const show = (role) => {
