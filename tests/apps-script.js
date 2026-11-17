@@ -11,13 +11,13 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
 // 1) 合言葉
 {
   const E = makeEnv(SEC);
-  eq('wrong secret', E.post({ secret: 'x', ping: true }), { ok: false, err: 'secret', ver: 2 });
-  eq('ping', E.post({ secret: SEC, ping: true }), { ok: true, ping: true, can: { write: true, read: true }, ver: 2 });
-  eq('bad json', E.post('{oops'), { ok: false, err: 'format', ver: 2 });
+  eq('wrong secret', E.post({ secret: 'x', ping: true }), { ok: false, err: 'secret', ver: 3 });
+  eq('ping', E.post({ secret: SEC, ping: true }), { ok: true, ping: true, can: { write: true, read: true }, ver: 3 });
+  eq('bad json', E.post('{oops'), { ok: false, err: 'format', ver: 3 });
   const D = makeEnv(null); // 合言葉を書きかえていない（初期のまま）
-  eq('placeholder refused', D.post({ secret: 'ここを合言葉に書きかえる', ping: true }), { ok: false, err: 'secret', ver: 2 });
+  eq('placeholder refused', D.post({ secret: 'ここを合言葉に書きかえる', ping: true }), { ok: false, err: 'secret', ver: 3 });
   const S = makeEnv('short');
-  eq('short refused', S.post({ secret: 'short', ping: true }), { ok: false, err: 'secret', ver: 2 });
+  eq('short refused', S.post({ secret: 'short', ping: true }), { ok: false, err: 'secret', ver: 3 });
   eq('doGet reveals nothing', vm.runInContext('doGet', E.ctx)().s.includes('動いています'), true);
 }
 
@@ -45,7 +45,7 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
   // 別の端末は、番号が重なっても別あつかい
   r = E.post({ secret: SEC, dev: 'devchild2', subj: 'shakai', subjName: '社会', rows: [row(0, { q: '別の端末の問題' })] });
   eq('other device same n', { added: r.added, rows: sh.getLastRow() }, { added: 1, rows: 6 });
-  eq('bad dev refused', E.post({ secret: SEC, dev: '../x', subj: 'shakai', rows: [] }), { ok: false, err: 'format', ver: 2 });
+  eq('bad dev refused', E.post({ secret: SEC, dev: '../x', subj: 'shakai', rows: [] }), { ok: false, err: 'format', ver: 3 });
 }
 
 // 3) 読む：教科・端末のしぼりこみ、わからない、学習量の合計
@@ -66,8 +66,8 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
   eq('at is ISO', /^\d{4}-\d{2}-\d{2}T/.test(r.at), true);
   r = E.post({ secret: SEC, read: true, subj: 'shakai', exclude: 'devchild1' });
   eq('exclude own device', [r.rows.length, r.rows[0].q, r.devs], [1, '二台目の問題', 1]);
-  eq('read needs secret', E.post({ secret: 'nope', read: true, subj: 'shakai' }), { ok: false, err: 'secret', ver: 2 });
-  eq('read empty', E.post({ secret: SEC, read: true, subj: 'kokugo' }), { ok: true, rows: [], days: {}, daysBy: {}, kids: [], devs: 0, at: '', ver: 2 });
+  eq('read needs secret', E.post({ secret: 'nope', read: true, subj: 'shakai' }), { ok: false, err: 'secret', ver: 3 });
+  eq('read empty', E.post({ secret: SEC, read: true, subj: 'kokugo' }), { ok: true, rows: [], days: {}, daysBy: {}, kids: [], devs: 0, at: '', ver: 3 });
   // 件数の上限
   const many = Array.from({ length: 200 }, (_, i) => row(100 + i));
   for (let k = 0; k < 4; k++) w('devbig001', 'rika', many.map((x, i) => ({ ...x, n: 1000 + k * 200 + i })));
@@ -83,13 +83,13 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
   eq('write secret can write only', E.post({ secret: W, ping: true }).can, { write: true, read: false });
   eq('read secret can read only', E.post({ secret: RD, ping: true }).can, { write: false, read: true });
   eq('write ok', E.post({ secret: W, ...base, rows: [row(0)] }).added, 1);
-  eq('write secret cannot read', E.post({ secret: W, read: true, subj: 'shakai' }), { ok: false, err: 'secret', ver: 2 });
-  eq('read secret cannot write', E.post({ secret: RD, ...base, rows: [row(1)] }), { ok: false, err: 'readonly', ver: 2 });
+  eq('write secret cannot read', E.post({ secret: W, read: true, subj: 'shakai' }), { ok: false, err: 'secret', ver: 3 });
+  eq('read secret cannot write', E.post({ secret: RD, ...base, rows: [row(1)] }), { ok: false, err: 'readonly', ver: 3 });
   eq('read secret reads', E.post({ secret: RD, read: true, subj: 'shakai' }).rows.length, 1);
   eq('nothing written by read secret', E.sheets['まちがい'].getLastRow(), 2);
   // 読む用が短い・書く用と同じ：設定まちがいとして、すべて断る
-  eq('short read secret = config error', makeEnv(W, 'short').post({ secret: W, ping: true }), { ok: false, err: 'config', ver: 2 });
-  eq('same read secret = config error', makeEnv(W, W).post({ secret: W, ping: true }), { ok: false, err: 'config', ver: 2 });
+  eq('short read secret = config error', makeEnv(W, 'short').post({ secret: W, ping: true }), { ok: false, err: 'config', ver: 3 });
+  eq('same read secret = config error', makeEnv(W, W).post({ secret: W, ping: true }), { ok: false, err: 'config', ver: 3 });
 }
 
 // 5) お子さんの呼び名と、お子さんごとの学習量
@@ -169,6 +169,11 @@ const row = (n, o = {}) => ({ n, d: '2026-11-16', t: '10:0' + (n % 10), cat: 'to
   eq('summary today', [sm.today.solved, sm.streak, sm.week.solved], [1, 3, 25]);
   eq('kids list', P({ act: 'kids' }).kids.map((k) => [k.dev, k.label]), [['kidaaaa1', 'たろう']]);
   eq('ledger newest first', P({ act: 'ledger', limit: 3 }).ledger.length, 3);
+  // まとめ取り：1 回で、ようす・一覧・申請などを返す（ひとつずつ取ったときと同じ中身）
+  const m = P({ act: 'multi', parts: [{ act: 'kids' }, { act: 'summary', today: '2026-11-19' }, { act: 'requests', status: 'all' }, { act: 'rewards' }, { act: 'decide', id: 2 }] });
+  eq('multi same as single', [m.ok, JSON.stringify(m.results[0]) === JSON.stringify(Object.assign({}, P({ act: 'kids' }), { ver: undefined })), m.results[1].today.solved, m.results[2].requests.length, m.results[3].rewards.length], [true, true, 1, 2, 2]);
+  eq('multi refuses writes', m.results[4], { ok: false, err: 'format' });
+  eq('multi needs parent secret', C({ act: 'multi', parts: [{ act: 'kids' }] }).err, 'secret');
   // 端末を外す → その端末の記録は受け付けない
   P({ act: 'block', kid: 'kidaaaa1', block: true });
   eq('blocked device refused', [send([ev(30)]).err, C({ act: 'state' }).err], ['blocked', 'blocked']);

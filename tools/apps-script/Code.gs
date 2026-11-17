@@ -20,7 +20,7 @@
  */
 
 // 受け口の版番号（アプリは、これより古い受け口には「Code.gs を新しくしてください」と知らせます）
-const VERSION = 2;
+const VERSION = 3;
 
 // ★ここを、自分だけの合言葉（英数字 12 文字以上）に書きかえてください。
 // 「記録を送る」ための合言葉です（お子さんの端末に入れます）。
@@ -281,9 +281,15 @@ const BADGES = [
 const num_ = (v) => (Number.isFinite(Number(v)) ? Math.floor(Number(v)) : 0);
 const isDay_ = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d));
 const table_ = (name, headers) => sheet_(name, headers, []);
+/* 保護者の画面の「まとめ取り」の間だけ、同じシートを 2 度読まないように覚えておく（書きこみのときは使わない） */
+let MEMO_ = null;
 function values_(sheet, width) {
+  const key = MEMO_ && sheet.getName ? sheet.getName() + '#' + width : '';
+  if (key && MEMO_[key]) return MEMO_[key];
   const last = sheet.getLastRow();
-  return last > 1 ? sheet.getRange(2, 1, last - 1, width).getValues() : [];
+  const v = last > 1 ? sheet.getRange(2, 1, last - 1, width).getValues() : [];
+  if (key) MEMO_[key] = v;
+  return v;
 }
 function append_(sheet, rows, textFrom) {
   if (!rows.length) return;
@@ -479,7 +485,7 @@ function childState_(dev) {
 function family_(body, a) {
   const act = String(body.act);
   const CHILD = ['state', 'request', 'read_msgs'];
-  const PARENT = ['summary', 'requests', 'decide', 'messages', 'send', 'rewards', 'reward_add', 'reward_update', 'kids', 'ledger', 'block'];
+  const PARENT = ['multi', 'summary', 'requests', 'decide', 'messages', 'send', 'rewards', 'reward_add', 'reward_update', 'kids', 'ledger', 'block'];
   if (CHILD.indexOf(act) >= 0) {
     if (!a.write) return json_({ ok: false, err: 'secret' });
     const dev = clean_(body.dev, 20);
@@ -520,20 +526,37 @@ function family_(body, a) {
   return parent_(act, body);
 }
 
-function parent_(act, body) {
+/* 保護者の画面が読むもの（書きかえない操作） */
+const PARENT_READS = ['summary', 'requests', 'messages', 'rewards', 'kids', 'ledger'];
+function parentRead_(act, body) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const kid = /^[a-z0-9]{4,20}$/.test(String(body.kid || '')) ? String(body.kid) : '';
-  if (act === 'summary') return json_(Object.assign({ ok: true }, summary_(kid, isDay_(body.today) ? String(body.today) : '')));
-  if (act === 'requests') return json_({ ok: true, requests: requestsList_(kid, String(body.status || 'all')).slice(0, 50) });
-  if (act === 'messages') return json_({ ok: true, messages: messagesList_('').slice(0, 30) });
-  if (act === 'rewards') return json_({ ok: true, rewards: rewardsList_(true) });
-  if (act === 'kids') return json_({ ok: true, kids: kids_() });
+  if (act === 'summary') return Object.assign({ ok: true }, summary_(kid, isDay_(body.today) ? String(body.today) : ''));
+  if (act === 'requests') return { ok: true, requests: requestsList_(kid, String(body.status || 'all')).slice(0, 50) };
+  if (act === 'messages') return { ok: true, messages: messagesList_('').slice(0, 30) };
+  if (act === 'rewards') return { ok: true, rewards: rewardsList_(true) };
+  if (act === 'kids') return { ok: true, kids: kids_() };
   if (act === 'ledger') {
     const led = ss.getSheetByName(LEDGER);
     const list = led ? values_(led, LEDGER_HEADERS.length).filter((r) => !kid || r[1] === kid).slice(-Math.min(200, Math.max(1, num_(body.limit) || 50))).reverse()
       .map((r) => ({ at: iso_(r[0]), dev: String(r[1]), label: String(r[2]), text: String(r[3]), pts: num_(r[4]) })) : [];
-    return json_({ ok: true, ledger: list });
+    return { ok: true, ledger: list };
   }
+  return { ok: false, err: 'format' };
+}
+
+function parent_(act, body) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const kid = /^[a-z0-9]{4,20}$/.test(String(body.kid || '')) ? String(body.kid) : '';
+  // まとめ取り：保護者の画面の 1 画面分を、1 回の問い合わせで返す（Google の受け口は 1 回ごとに時間がかかるため）
+  if (act === 'multi') {
+    MEMO_ = {};
+    try {
+      const parts = (Array.isArray(body.parts) ? body.parts : []).slice(0, 8);
+      return json_({ ok: true, results: parts.map((x) => (x && typeof x === 'object' && PARENT_READS.indexOf(String(x.act)) >= 0 ? parentRead_(String(x.act), x) : { ok: false, err: 'format' })) });
+    } finally { MEMO_ = null; }
+  }
+  if (PARENT_READS.indexOf(act) >= 0) return json_(parentRead_(act, body));
   const lock = LockService.getScriptLock();
   lock.waitLock(25000);
   try {
@@ -596,16 +619,20 @@ function parent_(act, body) {
 
 /** お子さん（端末）の一覧：呼び名・最後の通信・外しているか */
 function kids_() {
-  const p = PropertiesService.getScriptProperties();
+  // 記録を送ってきた端末は、どれも「seen:端末」を持っている（まちがいのシートを読まなくてすむ）
+  const props = PropertiesService.getScriptProperties().getProperties();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const devs = {};
-  [[SHEET_NAME, C.DEV, HEADERS.length], [EV_SHEET, 0, EV_HEADERS.length]].forEach(([n, col, w]) => {
-    const sh = ss.getSheetByName(n);
-    if (sh) values_(sh, w).forEach((r) => { if (r[col]) devs[String(r[col])] = true; });
-  });
+  Object.keys(props).forEach((k) => { if (k.indexOf('seen:') === 0) devs[k.slice(5)] = true; });
+  const ev = ss.getSheetByName(EV_SHEET);
+  if (ev) values_(ev, EV_HEADERS.length).forEach((r) => { if (r[0]) devs[String(r[0])] = true; });
+  // ポイントは「ポイント」のシートを 1 回だけ読んで、端末ごとに足す
+  const bal = {};
+  const led = ss.getSheetByName(LEDGER);
+  if (led) values_(led, LEDGER_HEADERS.length).forEach((r) => { bal[r[1]] = (bal[r[1]] || 0) + num_(r[4]); });
   let blocked = [];
-  try { blocked = JSON.parse(p.getProperty('blocked') || '[]'); } catch (e) { blocked = []; }
-  return Object.keys(devs).sort().map((d) => ({ dev: d, label: p.getProperty('label:' + d) || '', lastSeen: p.getProperty('seen:' + d) || '', blocked: blocked.indexOf(d) >= 0, balance: balance_(d) }));
+  try { blocked = JSON.parse(props.blocked || '[]'); } catch (e) { blocked = []; }
+  return Object.keys(devs).sort().map((d) => ({ dev: d, label: props['label:' + d] || '', lastSeen: props['seen:' + d] || '', blocked: blocked.indexOf(d) >= 0, balance: bal[d] || 0 }));
 }
 
 /** 保護者の「ようす」：きょう・今週・ポイント・連続日数・苦手そうな分野・確認待ちの申請 */

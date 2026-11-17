@@ -10,6 +10,7 @@ function makeEnv(secret, readSecret, rawCode) {
   const props = {};
   class Sheet {
     constructor(name) { this.name = name; this.data = []; this.frozen = 0; }
+    getName() { return this.name; }
     getLastRow() { return this.data.length; }
     getRange(r, c, nr = 1, nc = 1) {
       const sh = this;
@@ -29,7 +30,7 @@ function makeEnv(secret, readSecret, rawCode) {
       insertSheet: (n) => (sheets[n] = new Sheet(n)),
     }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; }, getProperties: () => Object.assign({}, props) }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ s, setMimeType() { return this; } }) },
     console,
   };

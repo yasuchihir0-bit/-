@@ -35,6 +35,21 @@
     if (r && r.ok && Number.isInteger(r.ver) && r.ver < S.MIN_VER) return { ok: false, err: 'old' };
     return r || { ok: false, err: 'fail' };
   }
+  /* 1 画面分をまとめて取る。新しい受け口（版 3）は 1 回で、古い受け口は同時に出して取る */
+  let receiverVer = 0, noMulti = false;
+  async function bundle(parts) {
+    const r = noMulti ? { ok: false, err: 'format' } : await S.parentCall('multi', { parts }).catch(() => ({ ok: false, err: 'net' }));
+    if (r && r.err === 'format') noMulti = true; // 古い受け口：この画面のあいだは、まとめて取るのをやめる
+    if (r && Number.isInteger(r.ver)) receiverVer = r.ver;
+    if (r && r.ok && Number.isInteger(r.ver) && r.ver < S.MIN_VER) return parts.map(() => ({ ok: false, err: 'old' }));
+    if (r && r.ok && Array.isArray(r.results)) return r.results;
+    if (r && r.err && r.err !== 'format') return parts.map(() => r);
+    return Promise.all(parts.map((p) => { const { act, ...rest } = p; return api(act, rest); }));
+  }
+  /* 前に見た内容を、すぐ出すためにとっておく（この端末のブラウザだけ） */
+  const CACHE_KEY = 'tokai-parent-cache';
+  const cache = (() => { try { const c = JSON.parse(localStorage.getItem(CACHE_KEY)); return c && typeof c === 'object' ? c : {}; } catch (e) { return {}; } })();
+  const cacheSave = () => { try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (e) { /* noop */ } };
   const errText = (r) => (r && r.err === 'old' ? '受け口（Code.gs）が古いようです。教科の「👪 保護者の方へ」→「🔧 受け口を新しくする」で新しくしてください。' : ERR[r && r.err] || 'うまくいきませんでした。');
   function alertBox(t) { const el = $('#p-msg'); if (el) el.textContent = t; }
 
@@ -71,24 +86,49 @@
 
   /* ───────── タブ ───────── */
   const TABS = [['look', 'ようす'], ['req', '申請'], ['msg', '応援'], ['reward', 'ご褒美'], ['set', '設定']];
-  async function main(tab) {
-    h('<p class="small">読みこんでいます…</p>');
-    const [kr, sm] = await Promise.all([api('kids'), api('summary', { today: today(), kid })]);
-    if (!kr.ok || !sm.ok) {
-      h(`<h1>👪 保護者の画面</h1><div class="card"><p class="p-err">${esc(errText(kr.ok ? sm : kr))}</p><button class="btn sub" id="retry" type="button">もう一度</button></div>`);
+  const TAB_PARTS = {
+    look: () => [],
+    req: () => [{ act: 'requests', status: 'all', kid }],
+    msg: () => [{ act: 'messages' }],
+    reward: () => [{ act: 'rewards' }],
+    set: () => [{ act: 'ledger', limit: 50, kid }],
+  };
+  let current = '';
+  async function main(tab, fresh) {
+    tab = TAB_PARTS[tab] ? tab : 'look';
+    const key = `${tab}|${kid}`;
+    current = key;
+    if (fresh) delete cache[key];
+    if (cache[key]) render(tab, cache[key], true);
+    else if (!$('#tab')) h('<p class="small">読みこんでいます…</p>');
+    else { $$('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab))); tabHtml('<p class="small">読みこんでいます…</p>'); }
+    const res = await bundle([{ act: 'kids' }, { act: 'summary', today: today(), kid }].concat(TAB_PARTS[tab]()));
+    if (current !== key) return; // 待っている間に、ほかのタブに移った
+    const bad = res.find((x) => !x || !x.ok);
+    if (bad) {
+      if (cache[key]) { const st = $('#p-stale'); if (st) st.hidden = true; alertBox(`更新できませんでした（前に読みこんだ内容です）。${errText(bad)}`); return; }
+      h(`<h1>👪 保護者の画面</h1><div class="card"><p class="p-err">${esc(errText(bad))}</p><button class="btn sub" id="retry" type="button">もう一度</button></div>`);
       $('#retry').addEventListener('click', () => main(tab));
       return;
     }
+    cache[key] = res;
+    cacheSave();
+    render(tab, res, false);
+  }
+  function render(tab, res, stale) {
+    const [kr, sm, tr] = res;
     kids = kr.kids || [];
     if (kid && !kids.some((k) => k.dev === kid)) kid = '';
     h(`<nav class="p-tabs" role="tablist">${TABS.map(([id, name]) => `<button type="button" role="tab" data-tab="${id}" aria-selected="${id === tab}">${name}${id === 'req' && num(sm.pending) ? `<span class="p-count">${num(sm.pending)}</span>` : ''}</button>`).join('')}</nav>
       ${kids.length > 1 ? `<div class="row" style="margin-bottom:10px"><span class="small">お子さん</span><div class="seg" role="group" aria-label="お子さん">
         <button type="button" data-kid="" aria-pressed="${!kid}">ぜんいん</button>${kids.map((k) => `<button type="button" data-kid="${esc(k.dev)}" aria-pressed="${k.dev === kid}">${esc(k.label || `端末 ${k.dev.slice(0, 4)}`)}</button>`).join('')}</div></div>` : ''}
-      <div id="tab"></div><p class="small p-err" id="p-msg" role="alert"></p>`);
+      <p class="small p-stale" id="p-stale" ${stale ? '' : 'hidden'}>🔄 新しい内容を読みこんでいます…</p>
+      <div id="tab"></div><p class="small p-err" id="p-msg" role="alert"></p>
+      ${!stale && receiverVer && receiverVer < 3 ? '<p class="small center">受け口を新しくすると、この画面がもっと速くなります（教科の「👪 保護者の方へ」→「🔧 受け口を新しくする」）。</p>' : ''}`);
     $$('[data-tab]').forEach((b) => b.addEventListener('click', () => main(b.dataset.tab)));
     $$('[data-kid]').forEach((b) => b.addEventListener('click', () => { kid = b.dataset.kid; main(tab); }));
-    const view = { look: () => look(sm), req, msg, reward, set }[tab] || (() => look(sm));
-    try { await view(); } catch (e) { alertBox(ERR.net); }
+    const view = { look: () => look(sm), req: () => req(tr), msg: () => msg(tr), reward: () => reward(tr), set: () => set(tr) }[tab];
+    try { view(); } catch (e) { alertBox(ERR.net); }
   }
   const tabHtml = (html) => { $('#tab').innerHTML = html; };
 
@@ -128,9 +168,7 @@
   }
 
   /* 申請 */
-  async function req() {
-    const r = await api('requests', { status: 'all', kid });
-    if (!r.ok) return alertBox(errText(r));
+  function req(r) {
     const all = r.requests || [];
     const pend = all.filter((x) => x.status === 'pending');
     const done = all.filter((x) => x.status !== 'pending').slice(0, 10);
@@ -149,16 +187,14 @@
       $$('[data-ok],[data-ng]').forEach((b) => { b.disabled = true; });
       const d = await api('decide', { id: +id, approve, note });
       if (!d.ok) alertBox(errText(d));
-      main('req');
+      main('req', true);
     };
     $$('[data-ok]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.ok, true)));
     $$('[data-ng]').forEach((b) => b.addEventListener('click', () => decide(b.dataset.ng, false)));
   }
 
   /* 応援 */
-  async function msg() {
-    const r = await api('messages');
-    if (!r.ok) return alertBox(errText(r));
+  function msg(r) {
     const list = r.messages || [];
     let stamp = '';
     tabHtml(`
@@ -185,14 +221,12 @@
       const to = $('#to') ? $('#to').value : '*';
       $('#send').disabled = true;
       const d = await api('send', { stamp, text, to });
-      if (d.ok) main('msg'); else { alertBox(errText(d)); $('#send').disabled = false; }
+      if (d.ok) main('msg', true); else { alertBox(errText(d)); $('#send').disabled = false; }
     });
   }
 
   /* ご褒美 */
-  async function reward() {
-    const r = await api('rewards');
-    if (!r.ok) return alertBox(errText(r));
+  function reward(r) {
     const list = r.rewards || [];
     tabHtml(`
       <div class="card"><strong>ご褒美を追加</strong>
@@ -218,23 +252,21 @@
       if (!body.name || !(body.cost >= 1)) return alertBox('名前とポイント（1 以上）を入れてください。');
       $('#add').disabled = true;
       const d = await api('reward_add', body);
-      if (d.ok) main('reward'); else { alertBox(d.err === 'format' ? '名前は 30 文字、ポイントは 1〜100000 にしてください。' : errText(d)); $('#add').disabled = false; }
+      if (d.ok) main('reward', true); else { alertBox(d.err === 'format' ? '名前は 30 文字、ポイントは 1〜100000 にしてください。' : errText(d)); $('#add').disabled = false; }
     });
     $$('[data-cost]').forEach((inp) => inp.addEventListener('change', async () => { if (await put(inp.dataset.cost, { cost: Math.floor(+inp.value) })) alertBox('ポイントを変えました。'); }));
-    $$('[data-hide]').forEach((b) => b.addEventListener('click', async () => { await put(b.dataset.hide, { hidden: b.dataset.hidden !== '1' }); main('reward'); }));
+    $$('[data-hide]').forEach((b) => b.addEventListener('click', async () => { await put(b.dataset.hide, { hidden: b.dataset.hidden !== '1' }); main('reward', true); }));
     $$('[data-up]').forEach((b) => b.addEventListener('click', async () => {
       const i = +b.dataset.up;
       const order = list.slice();
       [order[i - 1], order[i]] = [order[i], order[i - 1]];
       for (let k = 0; k < order.length; k++) if (order[k].sort !== k) await put(order[k].id, { sort: k });
-      main('reward');
+      main('reward', true);
     }));
   }
 
   /* 設定：端末・端末の追加（設定リンク）・ポイントの履歴 */
-  async function set() {
-    const r = await api('ledger', { limit: 50, kid });
-    if (!r.ok) return alertBox(errText(r));
+  function set(r) {
     const pair = S.getPair();
     tabHtml(`
       <div class="card"><strong>お子さんの端末</strong>
@@ -257,7 +289,8 @@
     $$('[data-block]').forEach((b) => b.addEventListener('click', async () => {
       const d = await api('block', { kid: b.dataset.block, block: b.dataset.blocked !== '1' });
       if (!d.ok) alertBox(errText(d));
-      main('set');
+      Object.keys(cache).forEach((k) => { delete cache[k]; });
+      main('set', true);
     }));
     const show = (role) => {
       const link = S.makeLink(new URL('index.html', location.href).href, role, role === 'child' ? $('#lklabel').value : '');
