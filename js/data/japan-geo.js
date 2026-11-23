@@ -171,5 +171,7 @@
     北関東工業地域: ['gunma,tochigi,ibaraki', '群馬県・栃木県・茨城県の内陸に広がる。'],
   };
   const REGIONS = ['北海道', '東北', '関東', '中部', '近畿', '中国・四国', '九州'];
-  global.JGEO = { P, F, REGIONS };
+  /* 都道府県名の読み（ひらがなで答えたときも正解にする） */
+  const YOMI = { hokkaido: 'ほっかいどう', aomori: 'あおもり', iwate: 'いわて', miyagi: 'みやぎ', akita: 'あきた', yamagata: 'やまがた', fukushima: 'ふくしま', ibaraki: 'いばらき', tochigi: 'とちぎ', gunma: 'ぐんま', saitama: 'さいたま', chiba: 'ちば', tokyo: 'とうきょう', kanagawa: 'かながわ', niigata: 'にいがた', toyama: 'とやま', ishikawa: 'いしかわ', fukui: 'ふくい', yamanashi: 'やまなし', nagano: 'ながの', gifu: 'ぎふ', shizuoka: 'しずおか', aichi: 'あいち', mie: 'みえ', shiga: 'しが', kyoto: 'きょうと', osaka: 'おおさか', hyogo: 'ひょうご', nara: 'なら', wakayama: 'わかやま', tottori: 'とっとり', shimane: 'しまね', okayama: 'おかやま', hiroshima: 'ひろしま', yamaguchi: 'やまぐち', tokushima: 'とくしま', kagawa: 'かがわ', ehime: 'えひめ', kochi: 'こうち', fukuoka: 'ふくおか', saga: 'さが', nagasaki: 'ながさき', kumamoto: 'くまもと', oita: 'おおいた', miyazaki: 'みやざき', kagoshima: 'かごしま', okinawa: 'おきなわ' };
+  global.JGEO = { P, F, REGIONS, YOMI };
 })(typeof window !== 'undefined' ? window : globalThis);

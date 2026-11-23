@@ -39,6 +39,7 @@ function checkSubject(S) {
           if (!q) { bad(`${g.name} returned null`, {}); break; }
           if (f && !f(q.lv)) bad(`${g.name} level filter`, q);
           if (![2, 3].includes(q.lv)) bad(`${g.name} level`, q);
+          if (q.type === 'text') { if (!Array.isArray(q.accept) || !q.accept.includes(q.ans)) bad(`${g.name} text answer not accepted`, q); continue; }
           if (!q.choices.includes(q.ans)) bad(`${g.name} answer not in choices`, q);
           if (new Set(q.choices).size !== 4) bad(`${g.name} choices`, q);
         }

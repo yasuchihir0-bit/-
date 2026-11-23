@@ -94,11 +94,22 @@
   const SINGLE = Object.keys(F).filter((n) => !F[n][0].includes(','));
   const CAPITAL = PIDS.filter((id) => id !== 'tokyo' && P[id][2].replace(/[市]$/, '') !== nameOf(id).replace(/[都道府県]$/, ''));
   const raw = [
+    /* 色をぬった都道府県の名前を書く（「県」などはあってもなくてもよい） */
+    () => {
+      const x = pick(PIDS), nm = nameOf(x), base = x === 'hokkaido' ? nm : nm.replace(/[都府県]$/, '');
+      return { type: 'text', q: '地図で色をぬった都道府県の名前を書きなさい。', ans: nm, accept: [nm, base].concat(G.YOMI && G.YOMI[x] ? [G.YOMI[x] + ({ 道: '', 都: 'と', 府: 'ふ', 県: 'けん' })[kind(x)], G.YOMI[x]] : []), lv: 3, map: { hi: [x], view: inRegion(regionOf(x)) }, exp: `${nm}（${regionOf(x)}地方、${regionOf(x) === '北海道' ? '道庁' : '県庁'}所在地は${P[x][2]}）。\n📍 ${nm}：${P[x][3]}` };
+    },
+    /* 色をぬった県の特ちょう */
+    () => {
+      const [t, x] = pick(FACTS);
+      const wrong = shuffle(FACTS.filter((f) => f[1] !== x)).slice(0, 3).map((f) => f[0]);
+      return { q: `地図で色をぬった${kind(x)}について、正しいものはどれですか。`, ans: t, choices: shuffle([t].concat(wrong)), lv: 3, map: { hi: [x], view: inRegion(regionOf(x)) }, exp: `色をぬったのは${nameOf(x)}です。${nameOf(x)}は「${t}」${kind(x)}です。\n📍 ${nameOf(x)}：${P[x][3]}` };
+    },
     /* 色をぬった都道府県の名前 */
     (f) => {
       const x = pick(PIDS);
       const ch = shuffle([x].concat(others(x, 3)));
-      return { q: '地図で色をぬった都道府県はどこですか。', ans: nameOf(x), choices: ch.map(nameOf), lv: 2, map: { hi: [x], view: inRegion(regionOf(x)) }, exp: `📍 ${nameOf(x)}：${P[x][3]}` };
+      return { q: '地図で色をぬった都道府県はどこですか。', ans: nameOf(x), choices: ch.map(nameOf), lv: 3, map: { hi: [x], view: inRegion(regionOf(x)) }, exp: `📍 ${nameOf(x)}：${P[x][3]}` };
     },
     /* ○○県はどれ（地図の ア〜エ） */
     (f) => {
@@ -119,14 +130,14 @@
     (f) => {
       const x = pick(CAPITAL);
       const ch = shuffle([x].concat(others(x, 4).filter((id) => id !== 'tokyo').slice(0, 3)));
-      return { q: '地図で色をぬった県の、県庁所在地はどこですか。', ans: P[x][2], choices: ch.map((id) => P[id][2]), lv: 2, map: { hi: [x], view: inRegion(regionOf(x)) }, exp: `${nameOf(x)}の県庁所在地は${P[x][2]}です。\n📍 ${nameOf(x)}：${P[x][3]}` };
+      return { q: '地図で色をぬった県の、県庁所在地はどこですか。', ans: P[x][2], choices: ch.map((id) => P[id][2]), lv: 3, map: { hi: [x], view: inRegion(regionOf(x)) }, exp: `${nameOf(x)}の県庁所在地は${P[x][2]}です。\n📍 ${nameOf(x)}：${P[x][3]}` };
     },
     /* 色をぬった地方 */
     (f) => {
       const r = pick(G.REGIONS.filter((x) => x !== '北海道'));
       const ch = shuffle([r].concat(shuffle(G.REGIONS.filter((x) => x !== r)).slice(0, 3)));
       const list = inRegion(r);
-      return { q: '地図で色をぬった地域は、7 地方区分の何地方ですか。', ans: `${r}地方`, choices: ch.map((x) => `${x}地方`), lv: 2, map: { hi: list, view: list.filter((id) => id !== 'okinawa') }, exp: `${r}地方：${list.map(nameOf).join('・')}。` };
+      return { q: '地図で色をぬった地域は、7 地方区分の何地方ですか。', ans: `${r}地方`, choices: ch.map((x) => `${x}地方`), lv: 3, map: { hi: list, view: list.filter((id) => id !== 'okinawa') }, exp: `${r}地方：${list.map(nameOf).join('・')}。` };
     },
   ];
   /* ★★★だけのときは、★★の形の問題のかわりに★★★の形の問題を出す */
