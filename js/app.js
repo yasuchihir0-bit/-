@@ -330,6 +330,14 @@
     return shuffle(rest).concat(shuffle(fresh), shuffle(due));
   }
 
+  /* 東海中の出題傾向に合わせて、分野ごとの重み（APP.weight、書いていない分野は 1）で分野をえらぶ */
+  const wOf = (cid) => { const w = APP.weight && APP.weight[cid]; return typeof w === 'number' && w > 0 ? w : 1; };
+  function wpick(pools) {
+    const total = pools.reduce((s, p) => s + wOf(p.cat.id), 0);
+    let r = Math.random() * total;
+    for (const p of pools) { r -= wOf(p.cat.id); if (r < 0) return p; }
+    return pools[pools.length - 1];
+  }
   /* targets: [{sid, cid}] の中から n 問 */
   function buildSet(targets, n, filter) {
     const pools = targets.map(({ sid, cid }) => {
@@ -344,7 +352,7 @@
     while (out.length < n && guard++ < n * 50) {
       const live = pools.filter((p) => p.cat.gens || p.bank.length);
       if (!live.length) break;
-      const p = pick(live);
+      const p = wpick(live);
       let q = null;
       if (p.cat.gens && (!p.bank.length || Math.random() < 0.3)) q = fromGen(p.subject, p.cat, filter);
       else if (p.bank.length) { const { item, idx } = p.bank.pop(); q = fromBank(p.subject, item, idx); }
@@ -675,6 +683,7 @@
     reset();
     h(`
       <h1>❓ 使い方</h1>
+      ${APP.tokai ? `<div class="card"><h2 style="margin-top:0">🎯 東海中の出題傾向</h2><p style="margin:0">${esc(APP.tokai)}</p><p class="small" style="margin:8px 0 0">「今日の学習」と「力だめし」は、東海中でよく出る分野が多めに出るようになっています。</p></div>` : ''}
       <div class="card">
         <h2 style="margin-top:0">毎日のやり方</h2>
         <ol class="steps">
@@ -970,6 +979,7 @@
         <div class="feedback ${ok ? 'ok' : 'ng'}">
           <div class="mark">${ok ? '⭕ 正解！' : '❌ ざんねん'}</div>
           ${ok ? '' : `<div>正解：<strong>${esc(q.ans)}</strong></div>`}
+          ${ok && APP.kanjiHint && q.type === 'text' && HAS_KANJI.test(q.ans) && !HAS_KANJI.test(given) ? `<div class="small kanji-hint">✍️ 本番では漢字で「<b>${esc(q.ans)}</b>」と書きましょう（東海中の社会は用語を漢字で書きます）。</div>` : ''}
           ${q.exp ? `<div class="exp-title">解説</div><div class="exp">${rich(q.exp)}</div>` : ''}
           <div class="small" style="margin-top:8px">${nextTxt}</div>
         </div>`;
