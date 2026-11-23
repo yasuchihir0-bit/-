@@ -73,6 +73,7 @@
       if (sn && typeof sn === 'object' && cats.has(sn.cat) && ['choice', 'text', 'multi'].includes(sn.type)) {
         card.snap = { subject: K.id, cat: sn.cat, type: sn.type, q: str(sn.q), ans: str(sn.ans), exp: str(sn.exp), lv: card.lv };
         ['choices', 'accept', 'correct'].forEach((f) => { const a = strs(sn[f]); if (a) card.snap[f] = a; });
+        if (sn.map && window.JMap) { const m = window.JMap.clean(sn.map); if (m) card.snap.map = m; }
         if ((sn.type === 'choice' || sn.type === 'multi') && !(card.snap.choices && card.snap.choices.length)) delete card.snap;
         if (sn.type === 'text' && !(card.snap.accept && card.snap.accept.length)) delete card.snap;
         if (sn.type === 'multi' && !card.snap.correct) delete card.snap;
@@ -231,6 +232,7 @@
     if (q.correct) o.correct = q.correct.slice();
     if (q.val) { o.val = { n: q.val.n, d: q.val.d }; o.unit = q.unit || ''; }
     if (q.passage) o.passage = q.passage;
+    if (q.map) o.map = q.map;
     return o;
   }
 
@@ -279,6 +281,7 @@
 
   function fromBank(subject, item, idx) {
     const base = { subject: subject.id, cat: item.cat, id: `${subject.id}-${idx}`, q: item.q, exp: item.exp, lv: lvOf(item) };
+    if (item.loc) base.loc = item.loc;
     if (item.p) base.passage = item.p;
     if (item.k) return Object.assign(base, { type: 'essay', ans: item.k, pts: (item.pts || []).slice(), lim: item.lim || 0 });
     if (isNum(item)) return Object.assign(base, { type: 'num', val: fromDecimal(String(item.n)), unit: item.unit || '', ans: ansOf(item) });
@@ -332,6 +335,14 @@
     return shuffle(rest).concat(shuffle(fresh), shuffle(due));
   }
 
+  /* 地図（社会）：問題の地図と、解説の「📍 位置」 */
+  const mapOf = (q) => (q.map && window.JMap ? window.JMap.html(q.map) : '');
+  function locOf(q) {
+    if (!q.loc || !q.loc.length) return '';
+    const ids = [...new Set(q.loc.flatMap((x) => x[2]))];
+    return `<div class="exp-title">📍 位置</div><ul class="locs">${q.loc.map(([n, t]) => `<li><b>${esc(n)}</b>：${esc(t)}</li>`).join('')}</ul>
+      ${window.JMap && ids.length <= 8 ? window.JMap.html({ hi: ids }, { small: true }) : ''}`;
+  }
   /* 東海中の出題傾向に合わせて、分野ごとの重み（APP.weight、書いていない分野は 1）で分野をえらぶ */
   const wOf = (cid) => { const w = APP.weight && APP.weight[cid]; return typeof w === 'number' && w > 0 ? w : 1; };
   function wpick(pools) {
@@ -686,6 +697,7 @@
     h(`
       <h1>❓ 使い方</h1>
       ${APP.tokai ? `<div class="card"><h2 style="margin-top:0">🎯 東海中の出題傾向</h2><p style="margin:0">${esc(APP.tokai)}</p><p class="small" style="margin:8px 0 0">「今日の学習」と「力だめし」は、東海中でよく出る分野が多めに出るようになっています。</p></div>` : ''}
+      ${window.JMap ? `<p class="small">日本地図のデータ：<a href="https://github.com/VictorCazanave/svg-maps/tree/master/packages/japan" target="_blank" rel="noopener">@svg-maps/japan</a>（Victor Cazanave、もとの地図は MapSVG）、<a href="https://creativecommons.org/licenses/by/4.0/deed.ja" target="_blank" rel="noopener">CC BY 4.0</a>。形を少し簡単にして使っています。</p>` : ''}
       <div class="card">
         <h2 style="margin-top:0">毎日のやり方</h2>
         <ol class="steps">
@@ -862,6 +874,7 @@
       <div class="progress"><i style="width:${(session.idx / total) * 100}%"></i></div>
       <div class="card">
         <div class="qtext">${rich(maskHint(asWriteQ(q.q), term))}</div>
+        ${mapOf(q)}
         <div class="small">漢字 ${len} 文字で書きましょう。</div>
         <div class="pad" id="pad"><canvas id="guide" aria-hidden="true"></canvas><canvas id="ink" aria-label="ここに答えを書く"></canvas></div>
         ${padTools()}
@@ -872,6 +885,7 @@
           ${yomi ? `<div class="small">${esc(yomi)}</div>` : ''}
           ${q.ans !== term ? `<div class="small">（${esc(q.ans)}）</div>` : ''}
           ${q.exp ? `<div class="exp-title">解説</div><div class="exp">${rich(q.exp)}</div>` : ''}
+          ${locOf(q)}
           <p class="small" style="margin:8px 0 0">自分の字と見くらべましょう。答えはわかったけれど字がちがったときは △ にします。</p>
         </div>
       </div>
@@ -946,6 +960,7 @@
       ${q.passage ? passageBox(q.passage) : ''}
       <div class="card">
         <div class="qtext">${rich(q.q)}</div>
+        ${mapOf(q)}
         <div id="input">${body}</div>
         <div id="fb"></div>
       </div>
@@ -983,6 +998,7 @@
           ${ok ? '' : `<div>正解：<strong>${esc(q.ans)}</strong></div>`}
           ${ok && APP.kanjiHint && q.type === 'text' && HAS_KANJI.test(q.ans) && !HAS_KANJI.test(given) ? `<div class="small kanji-hint">✍️ 本番では漢字で「<b>${esc(q.ans)}</b>」と書きましょう（東海中の社会は用語を漢字で書きます）。</div>` : ''}
           ${q.exp ? `<div class="exp-title">解説</div><div class="exp">${rich(q.exp)}</div>` : ''}
+          ${locOf(q)}
           <div class="small" style="margin-top:8px">${nextTxt}</div>
         </div>`;
       $app.querySelectorAll('#input button:not(.mchoice), #input input').forEach((el) => { el.disabled = true; });
@@ -1193,7 +1209,7 @@
             <summary><span class="m ${r.ok ? 'ok' : 'ng'}">${r.ok ? '○' : '×'}</span><span class="qs">${rich(r.q.q)}</span></summary>
             <div class="body">
               <div>正解：<strong>${esc(r.q.ans)}</strong>${!r.ok ? `　あなたの答え：${r.given == null ? 'わからない' : esc(r.given)}` : ''}</div>
-              <div class="exp">${rich(r.q.exp || '')}</div>
+              <div class="exp">${rich(r.q.exp || '')}</div>${locOf(r.q)}
             </div></details></li>`).join('')}
         </ul>
       </div>`);
@@ -1225,11 +1241,13 @@
       <div class="card flash">
         <div class="small">問題</div>
         <div class="qtext">${rich(q.type === 'text' || q.type === 'num' ? q.q : asRecall(q.q))}</div>
+        ${mapOf(q)}
         <div id="back" hidden>
           <hr>
           <div class="small">答え</div>
           <div class="flash-ans">${esc(q.ans)}</div>
           ${q.exp ? `<div class="exp">${rich(q.exp)}</div>` : ''}
+          ${locOf(q)}
         </div>
       </div>
       <div id="act">

@@ -315,3 +315,7 @@ node tests/check.js   # Node.js が必要。最後に all ok と出れば OK
 国語の「漢字の書き取り」の問題（48 問）も外してあります。
 以前の版は git の履歴に残っています（`git log --grep 書き取り` で、手書きを入れたコミットがわかります）。手書きの機能そのものは `js/app.js` に残してあり、
 データ側で `app.kanji = true` を設定し、`kanjiExtra`（`[分野, ヒント, 漢字, よみ]`）を用意すれば、また使えます。
+
+## 地図データのクレジット
+
+社会の地図（`js/jmap.js`）は [@svg-maps/japan](https://github.com/VictorCazanave/svg-maps/tree/master/packages/japan)（Victor Cazanave、もとの地図は [MapSVG](https://mapsvg.com/maps/japan)）を [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) のもとで使っています。座標を丸め、県ごとの中心と範囲を加えています。

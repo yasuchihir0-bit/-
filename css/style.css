@@ -434,3 +434,16 @@ a.p-fam-link { display: grid; gap: 4px; text-decoration: none; color: var(--text
 a.p-fam-link b { color: var(--accent); }
 a.icon-btn { text-decoration: none; color: inherit; }
 @media (max-width: 400px) { #parentBtn span { display: inline; } }
+
+/* 日本地図（社会：地図の問題・解説の 📍 位置） */
+.jmap { margin: 10px auto 4px; max-width: 420px; }
+.jmap.small { max-width: 260px; margin-top: 6px; }
+.jmap svg { width: 100%; height: auto; max-height: 380px; display: block; background: color-mix(in srgb, var(--accent) 8%, var(--card)); border: 1px solid var(--line); border-radius: 10px; }
+.jmap.small svg { max-height: 220px; }
+.jmap path { fill: var(--card); stroke: var(--muted); stroke-width: 0.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.jmap path.hi { fill: var(--c-soc); fill-opacity: 0.75; stroke: var(--text); }
+.jmap .mk circle { fill: var(--accent); stroke: var(--card); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.jmap .mk text { fill: #fff; text-anchor: middle; font-weight: 700; }
+.locs { margin: 4px 0 0; padding-left: 1.2em; }
+.locs li { margin: 2px 0; }
+.kanji-hint { margin-top: 6px; }
