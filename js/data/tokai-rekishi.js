@@ -214,10 +214,10 @@
   /* 1945 年の日付の並べかえ（「近現代の年代と流れ」で出題） */
   const dateOrder = () => {
     const ev = shuffle(D).slice(0, 4);
-    const right = ev.slice().sort((a, b) => a[1] * 100 + a[2] - (b[1] * 100 + b[2])).map((e) => KANA[ev.indexOf(e)]);
+    const right = ev.slice().sort((a, b) => a[0] * 10000 + a[1] * 100 + a[2] - (b[0] * 10000 + b[1] * 100 + b[2])).map((e) => KANA[ev.indexOf(e)]);
     const wrong = shuffle(perms(KANA).filter((p) => p.join() !== right.join())).slice(0, 3);
     const fmt = (p) => p.join(' → ');
-    return { q: `次の太平洋戦争中のできごとを、起きた順に並べたものはどれですか。\n${ev.map((e, i) => `${KANA[i]}　${e[3]}`).join('\n')}`, ans: fmt(right), choices: shuffle([fmt(right)].concat(wrong.map(fmt))), lv: 3, exp: ev.slice().sort((a, b) => a[1] * 100 + a[2] - (b[1] * 100 + b[2])).map((e) => `${e[0]} 年 ${md(e)}　${e[3]}（${e[4]}）`).join('\n') };
+    return { q: `次の太平洋戦争中のできごとを、起きた順に並べたものはどれですか。\n${ev.map((e, i) => `${KANA[i]}　${e[3]}`).join('\n')}`, ans: fmt(right), choices: shuffle([fmt(right)].concat(wrong.map(fmt))), lv: 3, exp: ev.slice().sort((a, b) => a[0] * 10000 + a[1] * 100 + a[2] - (b[0] * 10000 + b[1] * 100 + b[2])).map((e) => `${e[0]} 年 ${md(e)}　${e[3]}（${e[4]}）`).join('\n') };
   };
   /* 日付 → できごと */
   const dateWhat = () => {
