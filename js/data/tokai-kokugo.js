@@ -20,7 +20,7 @@
 
   /* 出題の重み（1 が標準）。東海中でよく出る分野を多く、ほとんど出ない分野を少なく */
   K.app = Object.assign(K.app || {}, {
-    weight: { kijutsu: 3, tanbun: 3, imi: 2, shinjo: 2, hyoron: 2, kanyo: 2, kotowaza: 2, tsukai: 1, yoji: 1, koji: 1, goi: 1, keigo: 0.3, bunpo: 0.3, jukugo: 0.4, hyogen: 0.3, bungaku: 0.2 },
+    weight: { kijutsu: 3, tanbun: 3, imi: 2, shinjo: 2, hyoron: 2, kanyo: 2, kotowaza: 2, tsukai: 1, yoji: 1, koji: 1, goi: 1, bunpo: 0.5 },
     topFocus: ['kijutsu', 'tanbun', 'shinjo', 'hyoron', 'imi', 'kanyo'],
     tokai: '東海中の国語：漢字の書き取り・物語（家族・自己・友人）・論説文（社会がテーマ）の 3 題。記述が多く、自分の意見や体験を書く問題も毎年出ます。語句は「言葉の意味」「ことわざ・慣用句」が中心です。（漢字の書き取りは、このアプリでは出題しません。）',
   });

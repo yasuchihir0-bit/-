@@ -20,7 +20,7 @@
     { id: 'skijutsu', name: '理由を短く書く記述', note: '記述' });
 
   S.app = Object.assign(S.app || {}, {
-    weight: { kokudo: 2, saigai: 2, skijutsu: 2, nogyo: 1.5, kindai: 1.5, gendai: 1.3, kinsei: 1.2, tokai: 1.2, seiji: 1.2, jiji: 1.2, chizu: 0.8, nendai: 1 },
+    weight: { kokudo: 2, saigai: 2, skijutsu: 2, nogyo: 1.5, kindai: 1.5, gendai: 1.3, kinsei: 1.2, tokai: 1.2, seiji: 1.2, jiji: 1.2, nendai: 1 },
     topFocus: ['kokudo', 'saigai', 'skijutsu', 'nogyo', 'kindai', 'seiji', 'jiji'],
     tokai: '東海中の社会：50 分で 60〜70 問（1 問あたり約 46 秒）。地理と歴史が中心で、最後の大問は公民。表やグラフから考える問題、理由を短く書く記述が出ます。用語は漢字で書けるようにしておきましょう。',
   });

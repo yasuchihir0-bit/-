@@ -4,7 +4,7 @@ const load = (f) => require(path.join(__dirname, '..', 'js', f));
 load('util.js');
 load('data/kokugo.js'); load('data/kokugo2.js'); load('data/kokugo3.js'); load('data/kokugo4.js'); load('data/kokugo-jakuten.js'); load('data/kokugo5.js'); load('data/kokugo6.js'); load('data/tokai-kokugo.js'); load('data/filter.js');
 load("data/shakai.js"); load("data/shakai2.js"); load("data/shakai3.js"); load("data/shakai4.js"); load("data/shakai5.js"); load("data/shakai6.js"); load("data/shakai7.js"); load("data/shakai8.js"); load("data/shakai-jakuten.js"); load("data/tokai-shakai.js");
-["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2", "rika-moshi", "rika-jakuten", "tokai-rika"].forEach((f) => load(`data/${f}.js`));
+["rika", "seibutsu", "chigaku", "butsuri", "kagaku", "jissen", "tsuika1", "tsuika2", "rika-moshi", "rika-jakuten", "tokai-rika", "tokai-filter"].forEach((f) => load(`data/${f}.js`));
 const { KOKUGO, SHAKAI, RIKA } = globalThis;
 let fail = 0;
 const bad = (msg, q) => { fail++; if (fail < 40) console.error('NG:', msg, JSON.stringify(q).slice(0, 160)); };

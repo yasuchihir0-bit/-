@@ -12,7 +12,7 @@
   const APP = Object.assign({
     key: 'tokai-kokugo-v1',
     file: 'tokai-kokugo-kiroku',
-    pickDesc: 'ことわざ・敬語・文法など、苦手な分野をクイズや暗記カードで集中練習。',
+    pickDesc: 'ことわざ・慣用句・言葉の意味など、苦手な分野をクイズや暗記カードで集中練習。',
     topFocus: ['shinjo', 'hyoron', 'tsukai', 'kanyo', 'bunpo'],
     textHint: '記述式：ひらがなで書けば OK です。',
     contentNote: '問題文・例文・解説はこのアプリのために作ったものです。まちがいがないよう注意していますが、言葉の意味や使い方は辞書によって説明が少しちがうことがあります。気になるところは辞書や学校・塾の教材でも確かめてください。',
@@ -297,6 +297,8 @@
   function fromCard(k, c) {
     const b = BANK.get(k);
     if (b) return fromBank(b.s, b.item, b.idx);
+    // 東海中で出ないので外した分野・問題は、復習にも出さない
+    if (!catOf(K.id, c.cat) || (APP.removedQ && APP.removedQ.has(String(k).split('|')[1]))) return null;
     if (!c.snap) return null;
     const q = Object.assign({}, c.snap);
     if (q.choices) q.choices = shuffle(q.choices);
